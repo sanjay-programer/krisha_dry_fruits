@@ -15,10 +15,13 @@ export interface ICustomer {
   email: string;
   phone: string;
   address: string;
+  doorNo?: string;
   city: string;
   state: string;
   pincode: string;
   notes: string;
+  lat?: number;
+  lng?: number;
 }
 
 export type OrderStatus = 'pending' | 'confirmed' | 'packed' | 'shipped' | 'delivered' | 'cancelled';
@@ -55,10 +58,13 @@ const CustomerSchema = new Schema<ICustomer>({
   email: String,
   phone: String,
   address: String,
+  doorNo: String,
   city: String,
   state: String,
   pincode: String,
   notes: String,
+  lat: Number,
+  lng: Number,
 });
 
 const OrderSchema = new Schema<IOrder>(

@@ -1,4 +1,4 @@
-import type { Product, CashewGrade, CashewType, Quantity } from './types';
+import type { Product, CashewGrade, StandardCashewGrade, CashewType, Quantity } from './types';
 
 // Pexels image URLs (verified, real, on-topic)
 const IMG = {
@@ -28,7 +28,7 @@ const IMG = {
 const QUANTITIES: Quantity[] = ['250g', '500g', '1kg', '2kg', '5kg'];
 
 // Base price per kg for each grade (higher grade number = larger nut = higher price)
-const GRADE_BASE_PRICE: Record<CashewGrade, number> = {
+const GRADE_BASE_PRICE: Record<StandardCashewGrade, number> = {
   W180: 1280,
   W210: 1080,
   W240: 880,
@@ -67,7 +67,7 @@ function roundToTen(n: number): number {
   return Math.round(n / 10) * 10;
 }
 
-function buildPrices(grade: CashewGrade, type: CashewType): { quantity: Quantity; price: number }[] {
+function buildPrices(grade: StandardCashewGrade, type: CashewType): { quantity: Quantity; price: number }[] {
   const base = GRADE_BASE_PRICE[grade];
   const mult = TYPE_MULTIPLIER[type];
   return QUANTITIES.map((q) => {
@@ -99,7 +99,7 @@ const TYPE_INFO: Record<CashewType, { description: string; image: string }> = {
   },
 };
 
-const GRADE_INFO: Record<CashewGrade, { name: string; tagline: string; description: string; gradeDescription: string; badge: string; image: string; gallery: string[] }> = {
+const GRADE_INFO: Record<StandardCashewGrade, { name: string; tagline: string; description: string; gradeDescription: string; badge: string; image: string; gallery: string[] }> = {
   W180: {
     name: 'Jumbo King W180',
     tagline: 'The largest, most exclusive cashew grade',
@@ -149,7 +149,7 @@ const GRADE_INFO: Record<CashewGrade, { name: string; tagline: string; descripti
 
 const ALL_TYPES: CashewType[] = ['Raw', 'Roasted', 'Roasted & Salted', 'Spiced', 'Honey Glazed'];
 
-export const PRODUCTS: Product[] = (Object.keys(GRADE_INFO) as CashewGrade[]).map((grade) => {
+export const PRODUCTS: Product[] = (Object.keys(GRADE_INFO) as StandardCashewGrade[]).map((grade) => {
   const info = GRADE_INFO[grade];
   return {
     id: grade.toLowerCase().replace('w', 'grade-w'),
@@ -158,7 +158,12 @@ export const PRODUCTS: Product[] = (Object.keys(GRADE_INFO) as CashewGrade[]).ma
     tagline: info.tagline,
     description: info.description,
     longDescription: `${info.description} Sourced directly from certified farms along India\'s western coast, every batch is hand-sorted, quality-checked, and packed in our facility within 48 hours of processing to lock in freshness.`,
-    origin: 'Goa & Karnataka Coast, India',
+    origin:
+      grade === 'W180' || grade === 'W240'
+        ? 'Goa Coastal Heritage Belt, India'
+        : grade === 'W210' || grade === 'W450'
+        ? 'Karnataka Malnad Foothills, India'
+        : 'Goa & Karnataka Coast, India',
     gradeDescription: info.gradeDescription,
     image: info.image,
     gallery: info.gallery,

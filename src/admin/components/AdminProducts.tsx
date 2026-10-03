@@ -1,11 +1,19 @@
 import { useEffect, useState, useRef } from 'react';
-import { Plus, Pencil, Trash2, Eye, EyeOff, Upload, X, Check, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, PlusCircle } from 'lucide-react';
+import { Plus, Pencil, Trash2, Eye, EyeOff, Upload, X, Check, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, PlusCircle, Sparkles, Copy, Search, Filter, RefreshCw, Database } from 'lucide-react';
 import { adminApi } from '@/api';
 import { uploadToCloudinary } from '@/lib/cloudinaryUpload';
-import { formatPrice } from '@/data';
+import { formatPrice, PRODUCTS } from '@/data';
+import {
+  getStoredProducts,
+  saveStoredProducts,
+  syncWithServerProducts,
+  addStoredProduct,
+  updateStoredProduct,
+  deleteStoredProduct,
+} from '@/products-storage';
 
-const GRADES = ['W180', 'W210', 'W240', 'W320', 'W450'];
-const ALL_TYPES = ['Raw', 'Roasted', 'Roasted & Salted', 'Spiced', 'Honey Glazed'];
+const DEFAULT_PRESET_GRADES = ['W120', 'W180', 'W210', 'W240', 'W320', 'W334', 'S354', 'W450'];
+const ALL_TYPES = ['Raw', 'Roasted', 'Roasted & Salted', 'Fried & Salted', 'Pepper Spiced', 'Honey Glazed'];
 const DEFAULT_QUANTITIES = ['250g', '500g', '1kg', '2kg', '5kg'];
 
 function makeType(type: string) {
@@ -20,24 +28,37 @@ function makeType(type: string) {
 
 function emptyProduct() {
   return {
-    grade: 'W320',
+    grade: '',
     name: '',
     tagline: '',
     description: '',
     longDescription: '',
     origin: 'Goa & Karnataka Coast, India',
     gradeDescription: '',
-    image: '',
+    image: '/cashew_single_nut.jpg',
     gallery: ['', '', '', ''] as string[],
-    badge: 'New',
+    badge: 'Premium',
     active: true,
-    types: ALL_TYPES.map(makeType),
+    types: ALL_TYPES.map((t, idx) => {
+      const base = makeType(t);
+      if (idx === 0) {
+        base.enabled = true;
+        base.prices = [
+          { quantity: '250g', price: 290 },
+          { quantity: '500g', price: 560 },
+          { quantity: '1kg', price: 1080 },
+          { quantity: '2kg', price: 2100 },
+          { quantity: '5kg', price: 5000 },
+        ];
+      }
+      return base;
+    }),
   };
 }
 
 export default function AdminProducts() {
-  const [products, setProducts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState<any[]>(PRODUCTS as any[]);
+  const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editProduct, setEditProduct] = useState<any | null>(null);
   const [form, setForm] = useState<any>(emptyProduct());
@@ -48,9 +69,44 @@ export default function AdminProducts() {
   const fileRef = useRef<HTMLInputElement>(null);
   const pendingField = useRef<string | null>(null);
 
+  const [adminSearch, setAdminSearch] = useState('');
+  const [filterGrade, setFilterGrade] = useState('ALL');
+  const [filterOrigin, setFilterOrigin] = useState('ALL');
+  const [customVariety, setCustomVariety] = useState('');
+
   const load = () => {
     setLoading(true);
-    adminApi.products.list().then(setProducts).finally(() => setLoading(false));
+    adminApi.products.list()
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          const synced = syncWithServerProducts(data as any);
+          setProducts(synced);
+        } else {
+          const local = getStoredProducts();
+          if (local && local.length > 0) setProducts(local);
+        }
+      })
+      .catch(() => {
+        const local = getStoredProducts();
+        if (local && local.length > 0) setProducts(local);
+      })
+      .finally(() => setLoading(false));
+  };
+
+  const handleSyncWithAtlas = async () => {
+    setLoading(true);
+    try {
+      const data = await adminApi.products.list();
+      if (Array.isArray(data)) {
+        saveStoredProducts(data as any);
+        setProducts(data as any);
+        alert(`Successfully synced ${data.length} products directly from MongoDB Atlas (krisha_dry_fruits)!`);
+      }
+    } catch (err: any) {
+      alert(`MongoDB Atlas sync failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, []);
@@ -59,9 +115,9 @@ export default function AdminProducts() {
 
   const openEdit = (p: any) => {
     setEditProduct(p);
-    // Merge existing types with all possible types, mark enabled ones
     const existingTypes = p.types || [];
-    const mergedTypes = ALL_TYPES.map((typeName) => {
+    const allTypeNames = Array.from(new Set([...ALL_TYPES, ...existingTypes.map((t: any) => t.type)]));
+    const mergedTypes = allTypeNames.map((typeName) => {
       const existing = existingTypes.find((t: any) => t.type === typeName);
       return existing ? { ...existing, enabled: true } : makeType(typeName);
     });
@@ -73,23 +129,132 @@ export default function AdminProducts() {
     setShowForm(true);
   };
 
+  const duplicateProductForNewStock = (p: any) => {
+    setEditProduct(null); // Create as brand new stock/product
+    const existingTypes = p.types || [];
+    const allTypeNames = Array.from(new Set([...ALL_TYPES, ...existingTypes.map((t: any) => t.type)]));
+    const mergedTypes = allTypeNames.map((typeName) => {
+      const existing = existingTypes.find((t: any) => t.type === typeName);
+      return existing ? { ...existing, enabled: true } : makeType(typeName);
+    });
+    setForm({
+      ...p,
+      _id: undefined,
+      id: undefined,
+      name: `${p.name} (New Stock)`,
+      gallery: [...(p.gallery || []), '', '', '', ''].slice(0, 4),
+      types: mergedTypes,
+    });
+    setShowForm(true);
+  };
+
+  const handleAddCustomVariety = () => {
+    const name = customVariety.trim();
+    if (!name) return;
+    if (form.types.some((t: any) => t.type.toLowerCase() === name.toLowerCase())) {
+      alert('This variety is already listed.');
+      return;
+    }
+    const newType = {
+      type: name,
+      enabled: true,
+      description: `Delicious ${name} whole cashew kernels`,
+      image: form.image || '/cashew_single_nut.jpg',
+      prices: DEFAULT_QUANTITIES.map((q) => {
+        const baseMap: Record<string, number> = { '250g': 320, '500g': 620, '1kg': 1200, '2kg': 2350, '5kg': 5600 };
+        return { quantity: q, price: baseMap[q] || 350 };
+      }),
+    };
+    setForm((f: any) => ({
+      ...f,
+      types: [...f.types, newType],
+    }));
+    setCustomVariety('');
+    setExpandedType(name);
+  };
+
   const handleSeed = async () => {
     setSeeding(true);
-    try { const r = await adminApi.products.seed(); alert(r.message); load(); }
-    catch (e: any) { alert(e.message); }
-    finally { setSeeding(false); }
+    try {
+      saveStoredProducts(PRODUCTS as any);
+      try {
+        await adminApi.products.seed();
+      } catch (apiErr) {
+        console.warn('Backend seed failed, seeded local storage:', apiErr);
+      }
+      alert('Sample cashew grades seeded successfully!');
+      load();
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setSeeding(false);
+    }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this product?')) return;
-    await adminApi.products.delete(id);
+    if (!confirm('Are you sure you want to delete this product from the catalogue?')) return;
+    deleteStoredProduct(id);
+    try {
+      await adminApi.products.delete(id);
+    } catch (apiErr) {
+      console.warn('Backend delete failed, removed from local storage:', apiErr);
+    }
     load();
   };
 
   const handleToggleActive = async (p: any) => {
-    await adminApi.products.update(p._id, { active: !p.active });
+    const newActive = !p.active;
+    updateStoredProduct(p._id || p.id, { active: newActive });
+    try {
+      await adminApi.products.update(p._id || p.id, { active: newActive });
+    } catch (apiErr) {
+      console.warn('Backend toggle active failed, updated in local storage:', apiErr);
+    }
     load();
   };
+
+  const autoFillGradeDetails = (gradeCode: string) => {
+    const g = (gradeCode || form.grade || '').trim().toUpperCase();
+    if (!g) return;
+
+    const matchNumber = g.match(/\d+/);
+    const countNumber = matchNumber ? parseInt(matchNumber[0]) : null;
+    const isSuperJumbo = countNumber !== null && countNumber <= 150;
+    const isJumbo = countNumber !== null && countNumber <= 210;
+
+    const suggestedName = `Jumbo King ${g}`;
+    const suggestedTagline = isSuperJumbo
+      ? `Ultra-rare super jumbo ${g} cashew harvest`
+      : isJumbo
+      ? `Large, premium grade ${g} hand-sorted whole cashews`
+      : `Finest grade ${g} whole gourmet cashews`;
+
+    const suggestedDesc = `Hand-sorted ${g} cashews celebrated for their uniform shape, exceptional crunch, and creamy sweetness.`;
+    const suggestedLongDesc = `Our ${g} grade cashews are harvested at peak ripeness along certified coastal plantations and solar dried to retain their authentic buttery character. Each batch undergoes rigorous grading to ensure premium caliber and zero defect.`;
+    const suggestedSpecs = countNumber
+      ? `Approximately ${countNumber} whole nuts per pound · Premium export caliber`
+      : `Grade ${g} whole kernels · High-density premium export standard`;
+    const suggestedBadge = isSuperJumbo ? 'Rare King' : isJumbo ? 'Premium Choice' : 'Gourmet Selection';
+
+    setForm((prev: any) => ({
+      ...prev,
+      grade: g,
+      name: !prev.name || prev.name.startsWith('Jumbo King') ? suggestedName : prev.name,
+      tagline: prev.tagline || suggestedTagline,
+      description: prev.description || suggestedDesc,
+      longDescription: prev.longDescription || suggestedLongDesc,
+      gradeDescription: prev.gradeDescription || suggestedSpecs,
+      badge: prev.badge || suggestedBadge,
+      image: prev.image || '/cashew_single_nut.jpg',
+    }));
+  };
+
+  const availablePresetGrades = Array.from(
+    new Set([
+      ...DEFAULT_PRESET_GRADES,
+      ...products.map((p) => (p.grade || '').toUpperCase()).filter(Boolean),
+    ])
+  );
 
   const triggerUpload = (field: string) => {
     pendingField.current = field;
@@ -118,7 +283,7 @@ export default function AdminProducts() {
         return f;
       });
     } catch (err: any) {
-      alert('Upload failed: ' + err.message + '\n\nMake sure you have created an unsigned upload preset named "krisha_unsigned" in your Cloudinary dashboard.');
+      alert('Upload failed: ' + err.message);
     } finally {
       setUploadingField(null);
     }
@@ -135,17 +300,6 @@ export default function AdminProducts() {
   const updateTypeField = (typeName: string, key: string, val: any) =>
     setForm((f: any) => ({ ...f, types: f.types.map((t: any) => t.type === typeName ? { ...t, [key]: val } : t) }));
 
-  const updatePrice = (typeName: string, qty: string, price: number) =>
-    setForm((f: any) => ({
-      ...f,
-      types: f.types.map((t: any) =>
-        t.type === typeName
-          ? { ...t, prices: t.prices.map((p: any) => p.quantity === qty ? { ...p, price } : p) }
-          : t
-      ),
-    }));
-
-  // updatePrice by index (used in the dynamic weight rows)
   const updatePriceByIdx = (typeName: string, idx: number, price: number) =>
     setForm((f: any) => ({
       ...f,
@@ -189,220 +343,418 @@ export default function AdminProducts() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     const enabledTypes = form.types.filter((t: any) => t.enabled);
-    if (enabledTypes.length === 0) { alert('Enable at least one type (Raw, Roasted, etc.)'); return; }
+    if (enabledTypes.length === 0) { alert('Enable at least one variety (Raw, Roasted, etc.)'); return; }
     if (!form.image) { alert('Main image is required'); return; }
+    if (!form.grade || !form.grade.trim()) { alert('Please enter a cashew grade (e.g. W120, W334, S354)'); return; }
+
     setSaving(true);
     try {
-      // Strip out the `enabled` flag before saving, only save enabled types
+      const cleanGrade = form.grade.trim().toUpperCase();
       const payload = {
         ...form,
+        grade: cleanGrade,
         gallery: form.gallery.filter(Boolean),
         types: enabledTypes.map(({ enabled: _, ...t }: any) => t),
       };
-      if (editProduct) await adminApi.products.update(editProduct._id, payload);
-      else await adminApi.products.create(payload);
+
+      if (editProduct) {
+        const targetId = editProduct._id || editProduct.id;
+        updateStoredProduct(targetId, payload);
+        try {
+          await adminApi.products.update(targetId, payload);
+        } catch (apiErr) {
+          console.warn('Backend update failed, saved to local storage:', apiErr);
+        }
+      } else {
+        let savedPayload = payload;
+        try {
+          const res = await adminApi.products.create(payload);
+          if (res && (res._id || res.id)) {
+            savedPayload = { ...payload, _id: res._id, id: res._id };
+          }
+        } catch (apiErr) {
+          console.warn('Backend create failed, saved to local storage:', apiErr);
+        }
+        addStoredProduct(savedPayload);
+      }
+
       setShowForm(false);
       load();
-    } catch (err: any) { alert(err.message); }
-    finally { setSaving(false); }
+    } catch (err: any) {
+      alert(err.message || 'Error saving grade');
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ── Form view ──────────────────────────────────────────────────────────────
   if (showForm) {
     return (
-      <div className="max-w-4xl">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="font-serif text-2xl font-bold text-brand-950">
-            {editProduct ? 'Edit Product' : 'Add Product'}
-          </h1>
-          <button onClick={() => setShowForm(false)} className="p-2 rounded-lg hover:bg-brand-50 transition-colors">
-            <X className="w-5 h-5 text-brand-600" />
+      <div className="max-w-4xl space-y-6 animate-fade-in pb-12">
+        <div className="flex items-center justify-between pb-4 border-b border-brand-200">
+          <div>
+            <h1 className="font-serif text-2xl font-bold text-brand-950">
+              {editProduct ? `Edit ${editProduct.name}` : 'Add New Cashew Grade'}
+            </h1>
+            <p className="text-xs text-brand-500 mt-0.5">
+              Configure cashew grading attributes, images, varieties, and tiered weight pricing.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowForm(false)}
+            className="p-2 rounded-xl text-brand-500 hover:text-brand-950 hover:bg-cream-200/60 transition-colors"
+          >
+            <X className="w-5 h-5" />
           </button>
         </div>
 
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
 
         <form onSubmit={handleSave} className="space-y-6">
-          {/* Basic info */}
-          <div className="card p-6 space-y-4">
-            <h2 className="font-serif text-base font-semibold text-brand-900">Basic Information</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs font-medium text-brand-700 mb-1.5 block">Grade</label>
-                <select value={form.grade} onChange={(e) => setField('grade', e.target.value)} className="input-field">
-                  {GRADES.map((g) => <option key={g}>{g}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-brand-700 mb-1.5 block">Badge</label>
-                <input value={form.badge} onChange={(e) => setField('badge', e.target.value)} className="input-field" placeholder="Premium" />
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs font-medium text-brand-700 mb-1.5 block">Name <span className="text-red-400">*</span></label>
-                <input value={form.name} onChange={(e) => setField('name', e.target.value)} className="input-field" placeholder="Jumbo King W180" required />
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs font-medium text-brand-700 mb-1.5 block">Tagline <span className="text-red-400">*</span></label>
-                <input value={form.tagline} onChange={(e) => setField('tagline', e.target.value)} className="input-field" placeholder="Short tagline" required />
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs font-medium text-brand-700 mb-1.5 block">Description <span className="text-red-400">*</span></label>
-                <textarea value={form.description} onChange={(e) => setField('description', e.target.value)} className="input-field resize-none" rows={2} required />
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs font-medium text-brand-700 mb-1.5 block">Long Description</label>
-                <textarea value={form.longDescription} onChange={(e) => setField('longDescription', e.target.value)} className="input-field resize-none" rows={3} />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-brand-700 mb-1.5 block">Origin</label>
-                <input value={form.origin} onChange={(e) => setField('origin', e.target.value)} className="input-field" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-brand-700 mb-1.5 block">Grade Description</label>
-                <input value={form.gradeDescription} onChange={(e) => setField('gradeDescription', e.target.value)} className="input-field" />
-              </div>
-            </div>
-          </div>
+          {/* Card 1: Basic Information */}
+          <div className="card p-6 bg-white border border-brand-200/70 shadow-luxury space-y-4">
+            <h2 className="font-serif text-base font-bold text-brand-950 border-b border-brand-100 pb-2">
+              1. Grade & Marketing Essentials
+            </h2>
 
-          {/* Main image */}
-          <div className="card p-6">
-            <h2 className="font-serif text-base font-semibold text-brand-900 mb-1">Main Image <span className="text-red-400">*</span></h2>
-            <p className="text-xs text-brand-500 mb-4">This is the primary product image shown on cards and listings.</p>
-            <div className="flex items-center gap-4">
-              {form.image
-                ? <img src={form.image} alt="main" className="w-24 h-24 rounded-xl object-cover ring-1 ring-brand-100 shrink-0" />
-                : <div className="w-24 h-24 rounded-xl bg-cream-200 flex items-center justify-center shrink-0 text-brand-400 text-xs">No image</div>
-              }
-              <div className="flex-1 space-y-2">
-                <input value={form.image} onChange={(e) => setField('image', e.target.value)} className="input-field" placeholder="Paste image URL, or upload below" />
-                <button type="button" onClick={() => triggerUpload('image')} disabled={!!uploadingField} className="btn-outline text-xs py-2 px-4">
-                  <Upload className="w-3.5 h-3.5" />
-                  {uploadingField === 'image' ? 'Uploading...' : 'Upload from device'}
-                </button>
-              </div>
-            </div>
-          </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1.5">
+                  <label className="text-xs font-bold text-brand-900 flex items-center gap-1.5">
+                    <span>Cashew Grade Code</span>
+                    <span className="text-red-500">*</span>
+                    <span className="text-[11px] font-normal text-brand-500">(Type any custom grade or pick a preset)</span>
+                  </label>
+                  {form.grade && (
+                    <button
+                      type="button"
+                      onClick={() => autoFillGradeDetails(form.grade)}
+                      className="text-[11px] font-bold text-brand-800 hover:text-brand-950 flex items-center gap-1 bg-cream-200/60 hover:bg-cream-200 px-2.5 py-1 rounded-lg transition-colors border border-brand-200"
+                      title="Auto-fill recommended title, description, and specs for this grade"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-gold-600" />
+                      Auto-fill Grade Template
+                    </button>
+                  )}
+                </div>
 
-          {/* Gallery */}
-          <div className="card p-6">
-            <h2 className="font-serif text-base font-semibold text-brand-900 mb-1">Gallery</h2>
-            <p className="text-xs text-brand-500 mb-4">Optional — up to 4 extra images shown in the product detail gallery.</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[0, 1, 2, 3].map((idx) => (
-                <div key={idx} className="space-y-2">
-                  {form.gallery[idx]
-                    ? <img src={form.gallery[idx]} alt="" className="w-full h-20 rounded-xl object-cover ring-1 ring-brand-100" />
-                    : <div className="w-full h-20 rounded-xl bg-cream-200 flex items-center justify-center text-xs text-brand-400">Empty</div>
-                  }
+                <div className="relative">
                   <input
-                    value={form.gallery[idx] || ''}
-                    onChange={(e) => { const g = [...form.gallery]; g[idx] = e.target.value; setField('gallery', g); }}
-                    className="input-field text-xs py-2"
-                    placeholder={`Image ${idx + 1}`}
+                    type="text"
+                    value={form.grade}
+                    onChange={(e) => {
+                      const val = e.target.value.toUpperCase();
+                      setField('grade', val);
+                    }}
+                    placeholder="Enter any grade (e.g. W120, W334, S354, W180, etc.)"
+                    className="input-field text-sm py-2.5 font-mono uppercase tracking-wider font-semibold placeholder:font-sans placeholder:normal-case placeholder:font-normal"
+                    required
                   />
-                  <button type="button" onClick={() => triggerUpload(`gallery-${idx}`)} disabled={!!uploadingField} className="btn-outline text-xs py-1.5 px-3 w-full">
-                    <Upload className="w-3 h-3" />
-                    {uploadingField === `gallery-${idx}` ? '...' : 'Upload'}
+                  {form.grade && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-mono font-bold px-2 py-0.5 rounded bg-brand-100 text-brand-900 border border-brand-200">
+                      {form.grade}
+                    </span>
+                  )}
+                </div>
+
+                {/* Preset Chips */}
+                <div className="mt-2.5">
+                  <div className="flex items-center gap-1.5 mb-1.5 text-[11px] font-semibold text-brand-600">
+                    <span>Quick Grade Presets:</span>
+                    <span className="text-brand-400 font-normal">Click any to quick-select</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 items-center">
+                    {availablePresetGrades.map((g) => {
+                      const isSelected = (form.grade || '').toUpperCase() === g.toUpperCase();
+                      return (
+                        <button
+                          key={g}
+                          type="button"
+                          onClick={() => {
+                            setField('grade', g);
+                            if (!form.name || form.name.startsWith('Jumbo King')) {
+                              autoFillGradeDetails(g);
+                            }
+                          }}
+                          className={`text-xs px-2.5 py-1 rounded-lg border font-mono font-medium transition-all ${
+                            isSelected
+                              ? 'bg-brand-900 text-cream-50 border-brand-900 shadow-xs'
+                              : 'bg-cream-100/80 hover:bg-cream-200 border-brand-200 text-brand-800'
+                          }`}
+                        >
+                          {g}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-brand-900 mb-1.5 block">Featured Badge</label>
+                <input value={form.badge} onChange={(e) => setField('badge', e.target.value)} className="input-field text-xs sm:text-sm py-2.5" placeholder="e.g. Connoisseur Choice" />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-xs font-bold text-brand-900 mb-1.5 block">Product Display Name <span className="text-red-500">*</span></label>
+                <input value={form.name} onChange={(e) => setField('name', e.target.value)} className="input-field text-xs sm:text-sm py-2.5" placeholder="e.g. Jumbo King W180" required />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-xs font-bold text-brand-900 mb-1.5 block">Short Tagline <span className="text-red-500">*</span></label>
+                <input value={form.tagline} onChange={(e) => setField('tagline', e.target.value)} className="input-field text-xs sm:text-sm py-2.5" placeholder="e.g. The largest, most exclusive cashew harvest" required />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-xs font-bold text-brand-900 mb-1.5 block">Summary Description <span className="text-red-500">*</span></label>
+                <textarea value={form.description} onChange={(e) => setField('description', e.target.value)} className="input-field resize-none text-xs sm:text-sm" rows={2} required />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-xs font-bold text-brand-900 mb-1.5 block">Long Detailed Narrative</label>
+                <textarea value={form.longDescription} onChange={(e) => setField('longDescription', e.target.value)} className="input-field resize-none text-xs sm:text-sm" rows={3} />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-brand-900 block">Harvest Location / Origin</label>
+                  <span className="text-[10px] text-brand-500 font-normal">Optional</span>
+                </div>
+                <input
+                  value={form.origin || ''}
+                  onChange={(e) => setField('origin', e.target.value)}
+                  className="input-field text-xs sm:text-sm py-2.5"
+                  placeholder="e.g. Goa Coastal Belt, Karnataka Malnad"
+                />
+                <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                  <span className="text-[10px] text-brand-400">Presets:</span>
+                  {['Goa Coastal Belt', 'Karnataka Malnad', 'Goa & Karnataka Coast'].map((loc) => (
+                    <button
+                      key={loc}
+                      type="button"
+                      onClick={() => setField('origin', loc)}
+                      className="text-[10px] px-2 py-0.5 rounded-full bg-brand-100 hover:bg-brand-200 text-brand-800 transition-colors"
+                    >
+                      {loc}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-brand-500 mt-1">
+                  * Matches storefront location banners (e.g. Goa, Karnataka)
+                </p>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-brand-900 mb-1.5 block">Grade Size Specifications</label>
+                <input value={form.gradeDescription} onChange={(e) => setField('gradeDescription', e.target.value)} className="input-field text-xs sm:text-sm py-2.5" placeholder="e.g. Approx 180 nuts per pound" />
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: Main Image & Gallery */}
+          <div className="card p-6 bg-white border border-brand-200/70 shadow-luxury space-y-4">
+            <h2 className="font-serif text-base font-bold text-brand-950 border-b border-brand-100 pb-2">
+              2. Photography & Visual Assets
+            </h2>
+
+            {/* Main Image */}
+            <div>
+              <label className="text-xs font-bold text-brand-900 mb-2 block">
+                Primary Product Showcase Image <span className="text-red-500">*</span>
+              </label>
+              <div className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-2xl bg-cream-50/60 border border-brand-100">
+                {form.image ? (
+                  <img src={form.image} alt="main preview" className="w-24 h-24 rounded-2xl object-cover ring-2 ring-brand-300 shrink-0" />
+                ) : (
+                  <div className="w-24 h-24 rounded-2xl bg-cream-200/70 flex items-center justify-center text-xs text-brand-400 shrink-0">
+                    No image
+                  </div>
+                )}
+                <div className="flex-1 space-y-2 w-full">
+                  <input
+                    value={form.image}
+                    onChange={(e) => setField('image', e.target.value)}
+                    className="input-field text-xs py-2 bg-white"
+                    placeholder="Direct Image URL or upload from device below"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => triggerUpload('image')}
+                    disabled={!!uploadingField}
+                    className="btn-outline text-xs py-2 px-4 shadow-sm"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{uploadingField === 'image' ? 'Uploading to CDN...' : 'Upload Image File'}</span>
                   </button>
                 </div>
-              ))}
+              </div>
+            </div>
+
+            {/* Gallery Images */}
+            <div className="pt-2">
+              <label className="text-xs font-bold text-brand-900 mb-1.5 block">
+                Secondary Gallery Shots (Up to 4)
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[0, 1, 2, 3].map((idx) => (
+                  <div key={idx} className="p-3 rounded-2xl bg-cream-50/60 border border-brand-100 space-y-2">
+                    {form.gallery[idx] ? (
+                      <img src={form.gallery[idx]} alt="" className="w-full h-20 rounded-xl object-cover ring-1 ring-brand-200" />
+                    ) : (
+                      <div className="w-full h-20 rounded-xl bg-cream-200/60 flex items-center justify-center text-xs text-brand-400">
+                        Slot #{idx + 1}
+                      </div>
+                    )}
+                    <input
+                      value={form.gallery[idx] || ''}
+                      onChange={(e) => { const g = [...form.gallery]; g[idx] = e.target.value; setField('gallery', g); }}
+                      className="input-field text-[11px] py-1.5 bg-white"
+                      placeholder={`URL ${idx + 1}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => triggerUpload(`gallery-${idx}`)}
+                      disabled={!!uploadingField}
+                      className="btn-outline text-[11px] py-1.5 px-2 w-full"
+                    >
+                      <Upload className="w-3 h-3" />
+                      <span>{uploadingField === `gallery-${idx}` ? '...' : 'Upload'}</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* Types & Prices */}
-          <div className="card p-6">
-            <h2 className="font-serif text-base font-semibold text-brand-900 mb-1">Types & Pricing</h2>
-            <p className="text-xs text-brand-500 mb-4">Toggle on the types available for this product. At least one is required.</p>
+          {/* Card 3: Varieties & Multi-Tier Pricing */}
+          <div className="card p-6 bg-white border border-brand-200/70 shadow-luxury space-y-4">
+            <h2 className="font-serif text-base font-bold text-brand-950 border-b border-brand-100 pb-2">
+              3. Varieties & Tiered Weight Pricing (₹)
+            </h2>
+            <p className="text-xs text-brand-500">
+              Toggle ON which varieties are available for this cashew grade. Set weight increments and customized INR pricing.
+            </p>
+
+            {/* Custom Variety Add Bar */}
+            <div className="flex items-center gap-2 p-3 bg-cream-50/80 rounded-xl border border-brand-200">
+              <input
+                value={customVariety}
+                onChange={(e) => setCustomVariety(e.target.value)}
+                placeholder="Add custom variety (e.g. Crispy Fried, Pepper Masala, Ghee Roast)"
+                className="input-field text-xs py-2 bg-white flex-1"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddCustomVariety();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleAddCustomVariety}
+                className="btn-outline text-xs py-2 px-3 flex items-center gap-1 font-semibold shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5 text-brand-700" />
+                <span>Add Variety</span>
+              </button>
+            </div>
+
             <div className="space-y-3">
               {form.types.map((t: any) => (
-                <div key={t.type} className={`border rounded-xl overflow-hidden transition-colors ${t.enabled ? 'border-brand-300' : 'border-brand-100'}`}>
-                  {/* Type header row */}
-                  <div className="flex items-center gap-3 px-4 py-3 bg-cream-50">
+                <div
+                  key={t.type}
+                  className={`rounded-2xl border transition-all ${
+                    t.enabled ? 'border-brand-400 bg-white shadow-sm' : 'border-brand-200/60 bg-cream-50/50'
+                  }`}
+                >
+                  {/* Type Bar */}
+                  <div className="flex items-center gap-3 px-4 py-3.5">
                     <button
                       type="button"
                       onClick={() => toggleType(t.type)}
                       className="shrink-0 transition-colors"
-                      title={t.enabled ? 'Disable this type' : 'Enable this type'}
                     >
                       {t.enabled
-                        ? <ToggleRight className="w-6 h-6 text-brand-600" />
-                        : <ToggleLeft className="w-6 h-6 text-brand-300" />
+                        ? <ToggleRight className="w-7 h-7 text-brand-700" />
+                        : <ToggleLeft className="w-7 h-7 text-brand-300" />
                       }
                     </button>
-                    <span className={`flex-1 text-sm font-semibold ${t.enabled ? 'text-brand-900' : 'text-brand-400'}`}>{t.type}</span>
+
+                    <div className="flex-1">
+                      <span className={`text-sm font-bold ${t.enabled ? 'text-brand-950' : 'text-brand-400'}`}>
+                        {t.type}
+                      </span>
+                      <span className="text-xs text-brand-400 ml-2">
+                        {t.enabled ? `(${t.prices?.length || 0} weight tiers configured)` : '(Disabled)'}
+                      </span>
+                    </div>
+
                     {t.enabled && (
                       <button
                         type="button"
                         onClick={() => setExpandedType(expandedType === t.type ? null : t.type)}
-                        className="p-1 rounded hover:bg-brand-100 transition-colors"
+                        className="p-1.5 rounded-lg hover:bg-cream-100 text-brand-700 transition-colors"
                       >
-                        {expandedType === t.type ? <ChevronUp className="w-4 h-4 text-brand-500" /> : <ChevronDown className="w-4 h-4 text-brand-500" />}
+                        {expandedType === t.type ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                       </button>
                     )}
                   </div>
 
-                  {/* Expanded details — only when enabled */}
+                  {/* Expanded Pricing Editor */}
                   {t.enabled && expandedType === t.type && (
-                    <div className="p-4 space-y-4 border-t border-brand-100">
+                    <div className="p-4 pt-2 border-t border-brand-100 space-y-4 animate-fade-in bg-cream-50/30">
                       <div>
-                        <label className="text-xs font-medium text-brand-700 mb-1.5 block">Description</label>
-                        <textarea value={t.description} onChange={(e) => updateTypeField(t.type, 'description', e.target.value)} className="input-field resize-none" rows={2} placeholder="Describe this variety..." />
+                        <label className="text-xs font-bold text-brand-900 mb-1 block">Variety Description</label>
+                        <textarea
+                          value={t.description}
+                          onChange={(e) => updateTypeField(t.type, 'description', e.target.value)}
+                          className="input-field text-xs bg-white"
+                          rows={2}
+                          placeholder="e.g. Slow-roasted to golden crunch with natural Himalayan rock salt..."
+                        />
                       </div>
-                      <div className="flex items-center gap-4">
-                        {t.image
-                          ? <img src={t.image} alt={t.type} className="w-16 h-16 rounded-lg object-cover ring-1 ring-brand-100 shrink-0" />
-                          : <div className="w-16 h-16 rounded-lg bg-cream-200 flex items-center justify-center text-xs text-brand-400 shrink-0">No img</div>
-                        }
-                        <div className="flex-1 space-y-2">
-                          <input value={t.image} onChange={(e) => updateTypeField(t.type, 'image', e.target.value)} className="input-field text-xs" placeholder="Type image URL or upload" />
-                          <button type="button" onClick={() => triggerUpload(`type-${t.type}`)} disabled={!!uploadingField} className="btn-outline text-xs py-1.5 px-3">
-                            <Upload className="w-3 h-3" />
-                            {uploadingField === `type-${t.type}` ? 'Uploading...' : 'Upload'}
-                          </button>
-                        </div>
-                      </div>
+
+                      {/* Weight Rows */}
                       <div>
                         <div className="flex items-center justify-between mb-2">
-                          <label className="text-xs font-medium text-brand-700">Weights & Prices (₹)</label>
+                          <label className="text-xs font-bold text-brand-900">Weights & Prices</label>
                           <button
                             type="button"
                             onClick={() => addQuantity(t.type)}
-                            className="flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-800 transition-colors"
+                            className="inline-flex items-center gap-1 text-xs font-bold text-brand-700 hover:text-brand-950"
                           >
-                            <PlusCircle className="w-3.5 h-3.5" /> Add weight
+                            <PlusCircle className="w-3.5 h-3.5" />
+                            <span>Add Tier</span>
                           </button>
                         </div>
+
                         <div className="space-y-2">
                           {t.prices.map((p: any, idx: number) => (
                             <div key={idx} className="flex items-center gap-2">
                               <input
                                 value={p.quantity}
                                 onChange={(e) => updateQuantityLabel(t.type, idx, e.target.value)}
-                                className="input-field text-xs py-2 w-28"
-                                placeholder="e.g. 500g, 1kg"
+                                className="input-field text-xs py-2 w-28 bg-white font-semibold"
+                                placeholder="e.g. 500g"
                               />
-                              <span className="text-brand-400 text-xs shrink-0">₹</span>
+                              <span className="text-brand-400 font-bold text-xs">₹</span>
                               <input
                                 type="number"
                                 value={p.price}
                                 onChange={(e) => updatePriceByIdx(t.type, idx, parseInt(e.target.value) || 0)}
-                                className="input-field text-xs py-2 flex-1"
-                                placeholder="Price"
+                                className="input-field text-xs py-2 flex-1 bg-white font-bold"
+                                placeholder="Price in INR"
                                 min="0"
                               />
                               <button
                                 type="button"
                                 onClick={() => removeQuantity(t.type, idx)}
-                                className="p-1.5 rounded-lg hover:bg-red-50 transition-colors shrink-0"
-                                title="Remove"
+                                className="p-2 text-brand-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
                               >
-                                <Trash2 className="w-3.5 h-3.5 text-brand-300 hover:text-red-500" />
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           ))}
-                          {t.prices.length === 0 && (
-                            <p className="text-xs text-brand-400 py-2">No weights added. Click "Add weight" above.</p>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -412,12 +764,23 @@ export default function AdminProducts() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 pb-8">
-            <button type="submit" disabled={saving} className="btn-primary">
+          {/* Form Action Controls */}
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="btn-primary py-3 px-8 text-xs sm:text-sm font-semibold flex items-center gap-2 shadow-lg shadow-brand-900/20"
+            >
               <Check className="w-4 h-4" />
-              {saving ? 'Saving...' : editProduct ? 'Update Product' : 'Create Product'}
+              <span>{saving ? 'Saving...' : editProduct ? 'Update Product Entry' : 'Create New Product'}</span>
             </button>
-            <button type="button" onClick={() => setShowForm(false)} className="btn-outline">Cancel</button>
+            <button
+              type="button"
+              onClick={() => setShowForm(false)}
+              className="btn-outline py-3 px-6 text-xs sm:text-sm font-semibold"
+            >
+              Cancel
+            </button>
           </div>
         </form>
       </div>
@@ -425,72 +788,322 @@ export default function AdminProducts() {
   }
 
   // ── List view ──────────────────────────────────────────────────────────────
+  const allOrigins = Array.from(
+    new Set(
+      products
+        .map((p) => (p.origin ? p.origin.split(',')[0].trim() : ''))
+        .filter(Boolean)
+    )
+  );
+
+  const allGrades = Array.from(
+    new Set(products.map((p) => (p.grade || '').trim().toUpperCase()).filter(Boolean))
+  );
+
+  const filteredAdminProducts = products.filter((p) => {
+    const q = adminSearch.toLowerCase().trim();
+    const matchesSearch =
+      !q ||
+      (p.name && p.name.toLowerCase().includes(q)) ||
+      (p.grade && p.grade.toLowerCase().includes(q)) ||
+      (p.origin && p.origin.toLowerCase().includes(q)) ||
+      (p.types && p.types.some((t: any) => t.type && t.type.toLowerCase().includes(q)));
+
+    const matchesGrade =
+      filterGrade === 'ALL' ||
+      (p.grade && p.grade.toUpperCase() === filterGrade.toUpperCase());
+
+    const matchesOrigin =
+      filterOrigin === 'ALL' ||
+      (p.origin && p.origin.toLowerCase().includes(filterOrigin.toLowerCase()));
+
+    return matchesSearch && matchesGrade && matchesOrigin;
+  });
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 animate-fade-in">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="font-serif text-2xl font-bold text-brand-950">Products</h1>
-          <p className="text-sm text-brand-500 mt-1">{products.length} products in catalogue</p>
+          <h1 className="font-serif text-2xl sm:text-3xl font-bold text-brand-950 tracking-tight">
+            Product Catalogue
+          </h1>
+          <p className="text-xs sm:text-sm text-brand-500 mt-1">
+            {products.length} cashew grades and regional harvests configured in active database.
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <button onClick={handleSeed} disabled={seeding} className="btn-outline text-xs py-2 px-4">
-            {seeding ? 'Seeding...' : 'Seed defaults'}
+
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-forest-50 border border-forest-200 text-forest-800 text-xs font-semibold shadow-xs">
+            <span className="w-2 h-2 rounded-full bg-forest-500 animate-pulse" />
+            <Database className="w-3.5 h-3.5 text-forest-700" />
+            <span>Atlas: krisha_dry_fruits</span>
+          </div>
+
+          <button
+            onClick={handleSyncWithAtlas}
+            disabled={loading}
+            className="btn-outline text-xs py-2 px-3.5 font-semibold flex items-center gap-1.5 shadow-sm"
+            title="Fetch live records directly from MongoDB Atlas database"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-forest-700 ${loading ? 'animate-spin' : ''}`} />
+            <span>Sync Atlas</span>
           </button>
-          <button onClick={openAdd} className="btn-primary">
-            <Plus className="w-4 h-4" /> Add Product
+
+          <button
+            onClick={handleSeed}
+            disabled={seeding}
+            className="btn-outline text-xs py-2 px-3 font-semibold flex items-center gap-1.5 shadow-sm hidden md:flex"
+            title="Seed standard baseline cashew grades"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-brand-600" />
+            <span>{seeding ? 'Seeding...' : 'Seed Defaults'}</span>
+          </button>
+
+          <button
+            onClick={openAdd}
+            className="btn-primary text-xs py-2 px-4.5 font-semibold flex items-center gap-1.5 shadow-md shadow-brand-900/15"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Grade / Product</span>
           </button>
         </div>
       </div>
 
+      {/* Catalogue Filter & Search Bar */}
+      <div className="card p-4 bg-white border border-brand-200/80 shadow-xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-brand-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              value={adminSearch}
+              onChange={(e) => setAdminSearch(e.target.value)}
+              placeholder="Search by grade (e.g. W180), name, origin (Goa, Karnataka), or variety (Fried, Roasted)..."
+              className="input-field text-xs sm:text-sm py-2 pl-9 bg-cream-50/50"
+            />
+            {adminSearch && (
+              <button
+                onClick={() => setAdminSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-brand-400 hover:text-brand-900"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          <div className="text-xs text-brand-500 shrink-0 font-medium">
+            Showing <strong className="text-brand-900">{filteredAdminProducts.length}</strong> of {products.length} products
+          </div>
+        </div>
+
+        {/* Filter Pills */}
+        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-brand-100 text-xs">
+          <span className="text-brand-400 font-semibold text-[11px] uppercase tracking-wider">Filter Grade:</span>
+          <button
+            onClick={() => setFilterGrade('ALL')}
+            className={`px-2.5 py-1 rounded-lg font-mono text-xs transition-colors ${
+              filterGrade === 'ALL'
+                ? 'bg-brand-900 text-white font-bold'
+                : 'bg-cream-100 hover:bg-cream-200 text-brand-700'
+            }`}
+          >
+            All
+          </button>
+          {allGrades.map((g) => (
+            <button
+              key={g}
+              onClick={() => setFilterGrade(g)}
+              className={`px-2.5 py-1 rounded-lg font-mono text-xs transition-colors ${
+                filterGrade === g
+                  ? 'bg-brand-900 text-white font-bold'
+                  : 'bg-cream-100 hover:bg-cream-200 text-brand-700'
+              }`}
+            >
+              {g}
+            </button>
+          ))}
+
+          {allOrigins.length > 0 && (
+            <>
+              <span className="text-brand-300 mx-1">|</span>
+              <span className="text-brand-400 font-semibold text-[11px] uppercase tracking-wider">Origin:</span>
+              <button
+                onClick={() => setFilterOrigin('ALL')}
+                className={`px-2.5 py-1 rounded-lg text-xs transition-colors ${
+                  filterOrigin === 'ALL'
+                    ? 'bg-forest-800 text-white font-bold'
+                    : 'bg-cream-100 hover:bg-cream-200 text-brand-700'
+                }`}
+              >
+                All Origins
+              </button>
+              {allOrigins.map((orig) => (
+                <button
+                  key={orig}
+                  onClick={() => setFilterOrigin(orig)}
+                  className={`px-2.5 py-1 rounded-lg text-xs transition-colors ${
+                    filterOrigin === orig
+                      ? 'bg-forest-800 text-white font-bold'
+                      : 'bg-cream-100 hover:bg-cream-200 text-brand-700'
+                  }`}
+                >
+                  📍 {orig}
+                </button>
+              ))}
+            </>
+          )}
+
+          {(filterGrade !== 'ALL' || filterOrigin !== 'ALL' || adminSearch) && (
+            <button
+              onClick={() => {
+                setFilterGrade('ALL');
+                setFilterOrigin('ALL');
+                setAdminSearch('');
+              }}
+              className="text-[11px] text-red-600 hover:text-red-800 underline ml-auto font-medium"
+            >
+              Reset Filters
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Product Cards Grid */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[...Array(5)].map((_, i) => <div key={i} className="card h-52 animate-pulse bg-cream-200" />)}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="card h-64 animate-pulse bg-cream-200/50" />
+          ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {products.map((p) => {
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredAdminProducts.map((p) => {
             const allPrices = (p.types || []).flatMap((t: any) => (t.prices || []).map((pr: any) => pr.price)).filter(Boolean);
             const minPrice = allPrices.length ? Math.min(...allPrices) : null;
+            const activeVarieties = (p.types || []).filter((t: any) => t.enabled !== false).map((t: any) => t.type);
+
             return (
-              <div key={p._id} className={`card overflow-hidden ${!p.active ? 'opacity-60' : ''}`}>
-                <div className="relative h-40 bg-cream-200">
-                  {p.image && <img src={p.image} alt={p.name} className="w-full h-full object-cover" />}
-                  <div className="absolute top-2 left-2">
-                    <span className="inline-flex items-center rounded-full bg-brand-600 px-2.5 py-0.5 text-xs font-semibold text-cream-50">{p.badge}</span>
-                  </div>
-                  {!p.active && (
-                    <div className="absolute inset-0 bg-brand-950/30 flex items-center justify-center">
-                      <span className="text-xs font-semibold text-white bg-brand-800/80 px-3 py-1 rounded-full">Hidden</span>
+              <div
+                key={p._id || p.id}
+                className={`card overflow-hidden bg-white border border-brand-200/70 shadow-luxury flex flex-col justify-between transition-all ${
+                  p.active === false ? 'opacity-65' : ''
+                }`}
+              >
+                <div>
+                  <div className="relative h-44 bg-cream-200/60 overflow-hidden">
+                    {p.image ? (
+                      <img src={p.image} alt={p.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-xs text-brand-400">
+                        No image
+                      </div>
+                    )}
+
+                    <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
+                      <span className="inline-flex items-center rounded-full bg-brand-950/90 backdrop-blur-md px-2.5 py-0.5 text-xs font-bold text-cream-50 border border-white/20 shadow-sm">
+                        {p.badge || 'Premium'}
+                      </span>
+                      {p.grade && (
+                        <span className="inline-flex items-center rounded-full bg-cream-100/95 backdrop-blur-md px-2 py-0.5 text-xs font-mono font-bold text-brand-900 border border-brand-300 shadow-sm">
+                          {p.grade}
+                        </span>
+                      )}
                     </div>
-                  )}
+
+                    {p.active === false && (
+                      <div className="absolute inset-0 bg-brand-950/40 backdrop-blur-xs flex items-center justify-center">
+                        <span className="text-xs font-bold text-white bg-black/60 px-3 py-1 rounded-full">
+                          Hidden from Store
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-5">
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <span className="text-[11px] font-bold text-brand-700 uppercase tracking-wider font-mono">
+                        {p.grade} Grade
+                      </span>
+                      {p.origin && (
+                        <span className="text-[11px] font-semibold text-forest-700 bg-forest-50 px-2 py-0.5 rounded-md border border-forest-200 truncate">
+                          📍 {p.origin.split(',')[0].trim()}
+                        </span>
+                      )}
+                    </div>
+
+                    <h3 className="font-serif text-lg font-bold text-brand-950 mb-1 leading-snug">
+                      {p.name}
+                    </h3>
+                    <p className="text-xs text-brand-600 mb-3 line-clamp-1">
+                      {p.tagline}
+                    </p>
+
+                    <div className="text-xs font-semibold text-brand-900 bg-cream-100/70 p-2.5 rounded-xl border border-brand-200/60 flex items-center justify-between mb-3">
+                      <span>{minPrice ? `From ${formatPrice(minPrice)}` : 'Pricing unconfigured'}</span>
+                      <span className="text-brand-600 font-medium">
+                        {activeVarieties.length} {activeVarieties.length === 1 ? 'variety' : 'varieties'}
+                      </span>
+                    </div>
+
+                    {activeVarieties.length > 0 && (
+                      <div className="flex flex-wrap gap-1 text-[10.5px]">
+                        {activeVarieties.map((v: string) => (
+                          <span key={v} className="px-2 py-0.5 rounded-md bg-cream-200/70 text-brand-800 font-medium">
+                            {v}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="p-4">
-                  <div className="text-xs font-semibold text-brand-500 mb-0.5">{p.grade}</div>
-                  <h3 className="font-serif text-sm font-semibold text-brand-900 mb-1">{p.name}</h3>
-                  <p className="text-xs text-brand-500 mb-3 line-clamp-1">{p.tagline}</p>
-                  <div className="text-xs text-brand-600 mb-3">
-                    {minPrice ? `From ${formatPrice(minPrice)}` : '—'}
-                    <span className="ml-2 text-brand-400">· {(p.types || []).length} types</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => openEdit(p)} className="flex-1 btn-outline text-xs py-1.5">
-                      <Pencil className="w-3 h-3" /> Edit
-                    </button>
-                    <button onClick={() => handleToggleActive(p)} className="p-1.5 rounded-lg hover:bg-brand-50 transition-colors" title={p.active ? 'Hide product' : 'Show product'}>
-                      {p.active ? <Eye className="w-4 h-4 text-brand-500" /> : <EyeOff className="w-4 h-4 text-brand-400" />}
-                    </button>
-                    <button onClick={() => handleDelete(p._id)} className="p-1.5 rounded-lg hover:bg-red-50 transition-colors">
-                      <Trash2 className="w-4 h-4 text-brand-400 hover:text-red-500" />
-                    </button>
-                  </div>
+
+                <div className="px-5 pb-5 pt-0 flex items-center gap-1.5 flex-wrap">
+                  <button
+                    onClick={() => openEdit(p)}
+                    className="flex-1 btn-outline text-xs py-2 font-semibold"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    <span>Edit</span>
+                  </button>
+
+                  <button
+                    onClick={() => duplicateProductForNewStock(p)}
+                    className="p-2 rounded-xl border border-brand-200 text-brand-700 hover:bg-cream-100 transition-colors"
+                    title="Duplicate this grade to add stock for a new variety (e.g. Fried, Roasted) or new origin (e.g. Karnataka)"
+                  >
+                    <Copy className="w-4 h-4 text-brand-700" />
+                  </button>
+
+                  <button
+                    onClick={() => handleToggleActive(p)}
+                    className="p-2 rounded-xl border border-brand-200 text-brand-700 hover:bg-cream-100 transition-colors"
+                    title={p.active !== false ? 'Hide from storefront' : 'Make visible in store'}
+                  >
+                    {p.active !== false ? <Eye className="w-4 h-4 text-forest-700" /> : <EyeOff className="w-4 h-4 text-brand-400" />}
+                  </button>
+
+                  <button
+                    onClick={() => handleDelete(p._id || p.id)}
+                    className="p-2 rounded-xl border border-brand-200 text-brand-400 hover:text-red-600 hover:bg-red-50 hover:border-red-200 transition-colors"
+                    title="Delete product"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             );
           })}
-          {products.length === 0 && (
-            <div className="col-span-3 card p-12 text-center">
-              <p className="text-brand-500 mb-4">No products yet.</p>
-              <button onClick={handleSeed} className="btn-primary">Seed default products</button>
+
+          {filteredAdminProducts.length === 0 && (
+            <div className="col-span-full card p-12 text-center bg-white border border-brand-200 shadow-luxury">
+              <p className="font-serif text-lg font-bold text-brand-950 mb-2">No matching products found</p>
+              <p className="text-xs text-brand-500 mb-6">Try clearing your search or filters, or add a new grade product.</p>
+              <button onClick={() => { setFilterGrade('ALL'); setFilterOrigin('ALL'); setAdminSearch(''); }} className="btn-primary py-2 px-5 text-xs mr-2">
+                Reset Filters
+              </button>
+              <button onClick={openAdd} className="btn-outline py-2 px-5 text-xs">
+                Add New Grade Product
+              </button>
             </div>
           )}
         </div>

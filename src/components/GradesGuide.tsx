@@ -49,14 +49,14 @@ export default function GradesGuide({ onShop, onViewProduct, products }: GradesG
           // Show skeletons while loading, or if no products yet
           [...Array(5)].map((_, i) => <SkeletonRow key={i} />)
         ) : (
-          GRADES.map((g, i) => {
-            const product = products.find((p) => p.grade === g.grade);
-            if (!product) return null;
-            const allPrices = product.types.flatMap((t) => t.prices.map((p) => p.price)).filter(Boolean);
+          products.map((product, i) => {
+            const gradeInfo = GRADES.find((g) => g.grade.toUpperCase() === product.grade.toUpperCase());
+            const gradeDesc = product.gradeDescription || gradeInfo?.description || product.tagline || 'Hand-sorted whole kernels';
+            const allPrices = (product.types || []).flatMap((t) => (t.prices || []).map((p) => p.price)).filter(Boolean);
             const minPrice = allPrices.length ? Math.min(...allPrices) : null;
             return (
               <div
-                key={g.grade}
+                key={(product as any)._id || product.id || product.grade}
                 className="card p-6 hover:shadow-md transition-all flex flex-col md:flex-row gap-6 items-center"
               >
                 <div className="flex items-center gap-4 md:w-48 shrink-0">
@@ -64,15 +64,22 @@ export default function GradesGuide({ onShop, onViewProduct, products }: GradesG
                     {i + 1}
                   </div>
                   <div>
-                    <div className="font-serif text-xl font-bold text-brand-900">{g.grade}</div>
-                    <div className="text-xs text-brand-500">{g.description}</div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-serif text-xl font-bold text-brand-900">{product.grade}</span>
+                      {product.origin && (
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-cream-100 text-brand-700 border border-brand-200">
+                          📍 {product.origin}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-brand-500 line-clamp-1">{gradeDesc}</div>
                   </div>
                 </div>
                 <div className="flex-1">
                   <h3 className="font-serif text-lg font-semibold text-brand-900 mb-1">{product.name}</h3>
                   <p className="text-sm text-brand-600 leading-relaxed mb-2">{product.description}</p>
                   <div className="flex flex-wrap gap-2">
-                    {product.types.slice(0, 4).map((t) => (
+                    {(product.types || []).slice(0, 4).map((t) => (
                       <span key={t.type} className="inline-flex items-center gap-1 rounded-full bg-cream-100 px-2.5 py-1 text-xs text-brand-600">
                         <Check className="w-3 h-3 text-forest-600" />
                         {t.type}

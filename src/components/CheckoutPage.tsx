@@ -52,7 +52,7 @@ async function reverseGeocode(lat: number, lng: number): Promise<Partial<Custome
     const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${MAPS_KEY}`);
     const data = await res.json();
     const result = data.results?.[0];
-    if (!result) return {};
+    if (!result) return { lat, lng };
     const comps: any[] = result.address_components || [];
     const get = (type: string) => comps.find((c: any) => c.types.includes(type))?.long_name || '';
     const streetNum = get('street_number');
@@ -61,19 +61,19 @@ async function reverseGeocode(lat: number, lng: number): Promise<Partial<Custome
     const city = get('locality') || get('administrative_area_level_2');
     const stateRaw = get('administrative_area_level_1');
     const pincode = get('postal_code');
-    const address = [streetNum, route, sublocality].filter(Boolean).join(', ') || result.formatted_address;
+    const address = [route, sublocality].filter(Boolean).join(', ') || result.formatted_address;
     const state = INDIAN_STATES.find((s) => s.toLowerCase() === stateRaw.toLowerCase()) || stateRaw;
-    return { address, city, state, pincode };
+    return { address, city, state, pincode, lat, lng, doorNo: streetNum || '' };
   } else {
     const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`);
     const data = await res.json();
     const addr = data.address || {};
-    const address = [addr.house_number, addr.road, addr.suburb].filter(Boolean).join(', ');
-    const city = addr.city || addr.town || addr.village || '';
+    const address = [addr.road, addr.suburb, addr.neighbourhood].filter(Boolean).join(', ') || data.display_name?.split(',').slice(0, 3).join(',') || '';
+    const city = addr.city || addr.town || addr.village || addr.county || '';
     const stateRaw = addr.state || '';
     const pincode = addr.postcode || '';
     const state = INDIAN_STATES.find((s) => s.toLowerCase() === stateRaw.toLowerCase()) || stateRaw;
-    return { address, city, state, pincode };
+    return { address, city, state, pincode, lat, lng, doorNo: addr.house_number || '' };
   }
 }
 
@@ -82,9 +82,20 @@ export default function CheckoutPage({ onBack, onPlaceOrder }: CheckoutPageProps
   const { user } = useUser();
 
   const [customer, setCustomer] = useState<CustomerInfo>({
-    fullName: '', email: '', phone: '', address: '', city: '', state: '', pincode: '', notes: '',
+    fullName: '',
+    email: '',
+    phone: '',
+    doorNo: '',
+    address: '',
+    city: '',
+    state: '',
+    pincode: '',
+    notes: '',
+    lat: undefined,
+    lng: undefined,
   });
   const [errors, setErrors] = useState<Partial<Record<keyof CustomerInfo, string>>>({});
+  const [mapError, setMapError] = useState<string>('');
   const [placing, setPlacing] = useState(false);
 
   // Map state — default center: India
@@ -117,12 +128,20 @@ export default function CheckoutPage({ onBack, onPlaceOrder }: CheckoutPageProps
   };
 
   const applyGeoResult = useCallback((result: Partial<CustomerInfo>, coords: [number, number]) => {
-    setCustomer((prev) => ({ ...prev, ...result }));
+    setCustomer((prev) => ({
+      ...prev,
+      ...result,
+      lat: coords[0],
+      lng: coords[1],
+      doorNo: result.doorNo || prev.doorNo || '',
+      address: result.address || prev.address || '',
+    }));
     setMarkerPos(coords);
     setFlyTo(coords);
+    setMapError('');
   }, []);
 
-  // Nominatim search suggestions (works without API key)
+  // Search suggestions
   const handleAddressSearch = (val: string) => {
     setAddressSearch(val);
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
@@ -177,62 +196,103 @@ export default function CheckoutPage({ onBack, onPlaceOrder }: CheckoutPageProps
         const city = get('locality') || get('administrative_area_level_2');
         const stateRaw = get('administrative_area_level_1');
         const pincode = get('postal_code');
-        const address = [streetNum, route, sublocality].filter(Boolean).join(', ') || data.result?.formatted_address || s.label;
+        const address = [route, sublocality].filter(Boolean).join(', ') || data.result?.formatted_address || s.label;
         const state = INDIAN_STATES.find((st) => st.toLowerCase() === stateRaw.toLowerCase()) || stateRaw;
         const loc = data.result?.geometry?.location;
         const coords: [number, number] = loc ? [loc.lat, loc.lng] : [20.5937, 78.9629];
-        applyGeoResult({ address, city, state, pincode }, coords);
+        applyGeoResult({ address, city, state, pincode, doorNo: streetNum || '' }, coords);
       } catch { update('address', s.label); }
     } else {
-      // Nominatim result — already has lat/lng
+      // Nominatim result
       const addr = s.address || {};
-      const address = [addr.house_number, addr.road, addr.suburb].filter(Boolean).join(', ') || s.main;
-      const city = addr.city || addr.town || addr.village || '';
+      const address = [addr.road, addr.suburb, addr.neighbourhood].filter(Boolean).join(', ') || s.main;
+      const city = addr.city || addr.town || addr.village || addr.county || '';
       const stateRaw = addr.state || '';
       const pincode = addr.postcode || '';
       const state = INDIAN_STATES.find((st) => st.toLowerCase() === stateRaw.toLowerCase()) || stateRaw;
-      applyGeoResult({ address, city, state, pincode }, [s.lat, s.lng]);
+      applyGeoResult({ address, city, state, pincode, doorNo: addr.house_number || '' }, [s.lat, s.lng]);
     }
   };
 
   // Map click → reverse geocode
   const handleMapClick = useCallback(async (lat: number, lng: number) => {
     setMarkerPos([lat, lng]);
+    setCustomer((prev) => ({ ...prev, lat, lng }));
+    setMapError('');
     try {
       const result = await reverseGeocode(lat, lng);
-      setCustomer((prev) => ({ ...prev, ...result }));
+      setCustomer((prev) => ({
+        ...prev,
+        ...result,
+        lat,
+        lng,
+        doorNo: result.doorNo || prev.doorNo || '',
+      }));
     } catch { /* ignore */ }
   }, []);
 
   // Auto-detect via geolocation
   const detectLocation = () => {
-    if (!navigator.geolocation) { alert('Geolocation not supported by your browser.'); return; }
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      return;
+    }
     setDetectingLocation(true);
     navigator.geolocation.getCurrentPosition(
       async ({ coords }) => {
         try {
-          const result = await reverseGeocode(coords.latitude, coords.longitude);
-          applyGeoResult(result, [coords.latitude, coords.longitude]);
-        } catch { alert('Could not fetch address. Please fill manually.'); }
-        finally { setDetectingLocation(false); }
+          const lat = coords.latitude;
+          const lng = coords.longitude;
+          const result = await reverseGeocode(lat, lng);
+          applyGeoResult(result, [lat, lng]);
+        } catch {
+          applyGeoResult({}, [coords.latitude, coords.longitude]);
+        } finally {
+          setDetectingLocation(false);
+        }
       },
-      () => { alert('Location access denied. Please fill address manually.'); setDetectingLocation(false); }
+      () => {
+        alert('Could not detect location. Please click directly on the map to pin your location.');
+        setDetectingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
     );
   };
 
   const validate = (): boolean => {
     const e: Partial<Record<keyof CustomerInfo, string>> = {};
-    if (!customer.fullName.trim()) e.fullName = 'Required';
-    if (!customer.email.trim()) e.email = 'Required';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) e.email = 'Invalid email';
-    if (!customer.phone.trim()) e.phone = 'Required';
-    else if (!/^[0-9]{10}$/.test(customer.phone.replace(/\s/g, ''))) e.phone = 'Enter 10 digits';
-    if (!customer.address.trim()) e.address = 'Required';
-    if (!customer.city.trim()) e.city = 'Required';
-    if (!customer.state.trim()) e.state = 'Required';
-    if (!customer.pincode.trim()) e.pincode = 'Required';
-    else if (!/^[0-9]{6}$/.test(customer.pincode)) e.pincode = 'Enter 6 digits';
+    let hasMapError = false;
+
+    if (!customer.fullName.trim()) e.fullName = 'Full name is required';
+    if (!customer.email.trim()) e.email = 'Email address is required';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) e.email = 'Invalid email address';
+    if (!customer.phone.trim()) e.phone = 'Phone number is required';
+    else if (!/^[0-9]{10}$/.test(customer.phone.replace(/\s/g, ''))) e.phone = 'Enter valid 10-digit mobile number';
+
+    // MAP PIN IS COMPULSORY!
+    if (!markerPos || !customer.lat || !customer.lng) {
+      setMapError('⚠️ Pinning your delivery location on the map is required. Please click anywhere on the map or tap "Use My Current GPS" so we can navigate directly to your door.');
+      hasMapError = true;
+    } else {
+      setMapError('');
+    }
+
+    if (!customer.address.trim()) e.address = 'Street/area address is required';
+    if (!customer.city.trim()) e.city = 'City is required';
+    if (!customer.state.trim()) e.state = 'State is required';
+    if (!customer.pincode.trim()) e.pincode = 'PIN code is required';
+    else if (!/^[0-9]{6}$/.test(customer.pincode)) e.pincode = 'Enter 6-digit PIN code';
+
     setErrors(e);
+
+    if (hasMapError) {
+      const el = document.getElementById('checkout-map-card');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return false;
+    }
+
     return Object.keys(e).length === 0;
   };
 
@@ -240,13 +300,26 @@ export default function CheckoutPage({ onBack, onPlaceOrder }: CheckoutPageProps
     ev.preventDefault();
     if (!validate()) return;
     setPlacing(true);
+
+    const finalDoor = (customer.doorNo || '').trim();
+    const finalStreet = customer.address.trim();
+    const fullStreetAddress = finalDoor ? `${finalDoor}, ${finalStreet}` : finalStreet;
+
+    const orderCustomer: CustomerInfo = {
+      ...customer,
+      doorNo: finalDoor,
+      address: fullStreetAddress,
+      lat: markerPos ? markerPos[0] : customer.lat,
+      lng: markerPos ? markerPos[1] : customer.lng,
+    };
+
     const order: OrderDetails = {
       orderId: generateOrderId(),
       items: [...items],
       subtotal,
       shipping,
       total,
-      customer,
+      customer: orderCustomer,
       paymentMethod: 'cod',
       placedAt: new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }),
       estimatedDelivery: getEstimatedDelivery(),
@@ -311,26 +384,67 @@ export default function CheckoutPage({ onBack, onPlaceOrder }: CheckoutPageProps
             </div>
           </div>
 
-          {/* Address */}
-          <div className="card p-6">
-            <div className="flex items-center justify-between mb-5">
-              <div className="flex items-center gap-2">
-                <MapPin className="w-5 h-5 text-brand-600" />
-                <h2 className="font-serif text-lg font-semibold text-brand-900">Delivery Address</h2>
+          {/* Address & Compulsory Map Pin */}
+          <div id="checkout-map-card" className={`card p-6 transition-all duration-300 ${mapError ? 'ring-2 ring-red-500 bg-red-50/10' : ''}`}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <div>
+                <h2 className="font-serif text-lg font-bold text-brand-950 flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-forest-700" />
+                  <span>Pin Delivery Location on Map</span>
+                  <span className="text-[11px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full">
+                    Compulsory *
+                  </span>
+                </h2>
+                <p className="text-xs text-brand-500 mt-0.5">
+                  Orders must be pinned on the map so Google Maps can guide the delivery courier directly to your door.
+                </p>
               </div>
+
               <button
                 type="button"
                 onClick={detectLocation}
                 disabled={detectingLocation}
-                className="flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-800 border border-brand-200 rounded-full px-3 py-1.5 transition-colors hover:bg-brand-50"
+                className="flex items-center justify-center gap-1.5 text-xs font-bold text-forest-800 hover:text-forest-950 bg-forest-50 hover:bg-forest-100 border border-forest-300 rounded-full px-4 py-2 transition-all shadow-xs shrink-0"
               >
-                <Locate className="w-3.5 h-3.5" />
-                {detectingLocation ? 'Detecting...' : 'Auto-detect'}
+                <Locate className={`w-3.5 h-3.5 ${detectingLocation ? 'animate-spin' : ''}`} />
+                <span>{detectingLocation ? 'Detecting GPS...' : 'Use My Current GPS'}</span>
               </button>
             </div>
 
-            {/* Map */}
-            <div className="mb-4 rounded-xl overflow-hidden border border-brand-100" style={{ height: 260 }}>
+            {/* GPS Pin Status Indicator */}
+            {markerPos ? (
+              <div className="mb-4 p-3 rounded-xl bg-forest-50 border border-forest-200 flex items-center justify-between gap-2 text-xs text-forest-900">
+                <div className="flex items-center gap-2">
+                  <Check className="w-4 h-4 text-forest-600 shrink-0" />
+                  <div>
+                    <span className="font-bold">Location Pinned: </span>
+                    <span className="font-mono text-forest-700 font-semibold">
+                      {markerPos[0].toFixed(5)}, {markerPos[1].toFixed(5)}
+                    </span>
+                  </div>
+                </div>
+                <span className="text-[11px] font-bold text-forest-700 bg-white px-2 py-0.5 rounded-md border border-forest-200">
+                  ✓ Verified for Google Maps
+                </span>
+              </div>
+            ) : (
+              <div className="mb-4 p-3 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-2 text-xs text-amber-900">
+                <MapPin className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold">Compulsory Step: </span>
+                  <span>Click or tap anywhere on the map below (or click &quot;Use My Current GPS&quot;) to pin your location before ordering.</span>
+                </div>
+              </div>
+            )}
+
+            {mapError && (
+              <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-300 text-xs font-bold text-red-700 flex items-center gap-2">
+                <span>{mapError}</span>
+              </div>
+            )}
+
+            {/* Interactive Leaflet Map */}
+            <div className="mb-4 rounded-2xl overflow-hidden border-2 border-brand-200 shadow-sm relative" style={{ height: 280 }}>
               <MapContainer
                 center={markerPos || [20.5937, 78.9629]}
                 zoom={markerPos ? 16 : 5}
@@ -345,65 +459,113 @@ export default function CheckoutPage({ onBack, onPlaceOrder }: CheckoutPageProps
                 <MapFlyTo coords={flyTo} />
                 {markerPos && <Marker position={markerPos} />}
               </MapContainer>
+              <div className="absolute bottom-2 left-2 right-2 bg-white/95 backdrop-blur-xs px-3 py-1.5 rounded-lg border border-brand-200 shadow-sm text-[11px] text-brand-700 flex items-center justify-between pointer-events-none z-[1000]">
+                <span>👉 Click on the map to set or refine your delivery pin</span>
+                {markerPos && <span className="font-mono text-forest-700 font-bold">GPS Locked</span>}
+              </div>
             </div>
-            <p className="text-xs text-brand-400 mb-4">Click anywhere on the map to pin your location, or search below.</p>
 
             {/* Address search */}
             <div className="relative mb-4">
-              <label className="text-xs font-medium text-brand-700 mb-1.5 block">Search your address</label>
+              <label className="text-xs font-semibold text-brand-700 mb-1.5 block">Search area / locality to move map</label>
               <div className="relative">
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-400" />
                 <input
                   value={addressSearch}
                   onChange={(e) => handleAddressSearch(e.target.value)}
                   className="input-field pl-10"
-                  placeholder="Type your address to search..."
+                  placeholder="Type colony, landmark, or street name to search..."
                 />
               </div>
               {suggestions.length > 0 && (
-                <div className="absolute z-20 w-full mt-1 bg-white rounded-xl shadow-lg ring-1 ring-brand-100 overflow-hidden">
+                <div className="absolute z-30 w-full mt-1 bg-white rounded-xl shadow-xl ring-1 ring-brand-200 overflow-hidden max-h-56 overflow-y-auto">
                   {suggestions.map((s) => (
                     <button
                       key={s.id}
                       type="button"
                       onClick={() => selectSuggestion(s)}
-                      className="w-full text-left px-4 py-3 text-sm text-brand-800 hover:bg-cream-100 transition-colors border-b border-brand-50 last:border-0"
+                      className="w-full text-left px-4 py-2.5 text-xs text-brand-800 hover:bg-cream-100 transition-colors border-b border-brand-50 last:border-0"
                     >
-                      <span className="font-medium">{s.main}</span>
-                      <span className="text-brand-500 text-xs block truncate">{s.secondary}</span>
+                      <span className="font-bold text-sm block">{s.main}</span>
+                      <span className="text-brand-500 text-[11px] block truncate">{s.secondary}</span>
                     </button>
                   ))}
                 </div>
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="sm:col-span-2">
-                <label className="text-xs font-medium text-brand-700 mb-1.5 block">Street Address</label>
-                <input value={customer.address} onChange={(e) => update('address', e.target.value)} className="input-field" placeholder="House no, Street, Area" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-brand-100">
+              <div>
+                <label className="text-xs font-semibold text-brand-700 mb-1.5 block">
+                  Flat / House / Door / Building No.
+                </label>
+                <input
+                  value={customer.doorNo || ''}
+                  onChange={(e) => update('doorNo', e.target.value)}
+                  className="input-field"
+                  placeholder="e.g. Flat 302, Sai Residency"
+                />
+                <p className="text-[11px] text-brand-400 mt-1">Specific flat or building number for courier delivery.</p>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-brand-700 mb-1.5 block">
+                  Street / Area / Landmark *
+                </label>
+                <input
+                  value={customer.address}
+                  onChange={(e) => update('address', e.target.value)}
+                  className="input-field"
+                  placeholder="Street or area name (autofilled from map)"
+                />
                 {errors.address && <p className="text-xs text-red-500 mt-1">{errors.address}</p>}
               </div>
+
               <div>
-                <label className="text-xs font-medium text-brand-700 mb-1.5 block">City</label>
-                <input value={customer.city} onChange={(e) => update('city', e.target.value)} className="input-field" placeholder="Mumbai" />
+                <label className="text-xs font-semibold text-brand-700 mb-1.5 block">City *</label>
+                <input
+                  value={customer.city}
+                  onChange={(e) => update('city', e.target.value)}
+                  className="input-field"
+                  placeholder="City"
+                />
                 {errors.city && <p className="text-xs text-red-500 mt-1">{errors.city}</p>}
               </div>
+
               <div>
-                <label className="text-xs font-medium text-brand-700 mb-1.5 block">State</label>
-                <select value={customer.state} onChange={(e) => update('state', e.target.value)} className="input-field">
+                <label className="text-xs font-semibold text-brand-700 mb-1.5 block">State *</label>
+                <select
+                  value={customer.state}
+                  onChange={(e) => update('state', e.target.value)}
+                  className="input-field"
+                >
                   <option value="">Select state</option>
                   {INDIAN_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
                 {errors.state && <p className="text-xs text-red-500 mt-1">{errors.state}</p>}
               </div>
+
               <div>
-                <label className="text-xs font-medium text-brand-700 mb-1.5 block">PIN Code</label>
-                <input value={customer.pincode} onChange={(e) => update('pincode', e.target.value)} className="input-field" placeholder="400001" maxLength={6} />
+                <label className="text-xs font-semibold text-brand-700 mb-1.5 block">PIN Code *</label>
+                <input
+                  value={customer.pincode}
+                  onChange={(e) => update('pincode', e.target.value)}
+                  className="input-field"
+                  placeholder="6-digit PIN code"
+                  maxLength={6}
+                />
                 {errors.pincode && <p className="text-xs text-red-500 mt-1">{errors.pincode}</p>}
               </div>
+
               <div>
-                <label className="text-xs font-medium text-brand-700 mb-1.5 block">Delivery Notes (optional)</label>
-                <textarea value={customer.notes} onChange={(e) => update('notes', e.target.value)} className="input-field resize-none" rows={2} placeholder="Any special instructions..." />
+                <label className="text-xs font-semibold text-brand-700 mb-1.5 block">Delivery Notes (optional)</label>
+                <textarea
+                  value={customer.notes}
+                  onChange={(e) => update('notes', e.target.value)}
+                  className="input-field resize-none"
+                  rows={2}
+                  placeholder="e.g. Ring bell twice, leave with security guard"
+                />
               </div>
             </div>
           </div>

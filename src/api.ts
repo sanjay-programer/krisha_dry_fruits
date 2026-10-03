@@ -3,7 +3,7 @@
 const BASE = import.meta.env.DEV
   ? 'http://localhost:8888/.netlify/functions'
   : '/api';
-const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || 'krisha_admin_2024';
+const ADMIN_SECRET = import.meta.env.VITE_ADMIN_PASSKEY || import.meta.env.VITE_ADMIN_SECRET || 'krisha_admin_2024';
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, options);

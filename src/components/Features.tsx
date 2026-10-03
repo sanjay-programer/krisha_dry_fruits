@@ -1,44 +1,44 @@
-import { Truck, ShieldCheck, Leaf, Package } from 'lucide-react';
+import { Leaf, Award, Truck, ShieldCheck, Heart, Clock, Check } from 'lucide-react';
+import { useSiteContent } from '@/site-content';
 
-const FEATURES = [
-  {
-    icon: Leaf,
-    title: 'Naturally Sourced',
-    description: 'Direct from certified farms along the Goa & Karnataka coast. No preservatives, ever.',
-  },
-  {
-    icon: Package,
-    title: 'Freshly Packed',
-    description: 'Every order is packed within 48 hours of processing to lock in peak freshness.',
-  },
-  {
-    icon: Truck,
-    title: 'Fast Delivery',
-    description: 'Free shipping on orders above ₹2,000. Delivered across India in 3–5 days.',
-  },
-  {
-    icon: ShieldCheck,
-    title: 'Quality Promise',
-    description: 'FSSAI certified and quality-checked. Not satisfied? 100% refund, no questions asked.',
-  },
-];
+const ICON_MAP: Record<string, any> = {
+  Leaf,
+  Award,
+  Truck,
+  ShieldCheck,
+  Heart,
+  Clock,
+  Check,
+};
 
 export default function Features() {
+  const content = useSiteContent();
+  const features = content.features || [];
+
   return (
-    <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {FEATURES.map((f) => (
-          <div
-            key={f.title}
-            className="card p-6 hover:shadow-md hover:-translate-y-1"
-          >
-            <div className="w-12 h-12 rounded-xl bg-brand-100 flex items-center justify-center mb-4">
-              <f.icon className="w-6 h-6 text-brand-600" />
-            </div>
-            <h3 className="font-serif text-base font-semibold text-brand-900 mb-2">{f.title}</h3>
-            <p className="text-sm text-brand-600 leading-relaxed">{f.description}</p>
-          </div>
-        ))}
+    <section className="bg-cream-100/90 border-b border-brand-200/50">
+      <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-4 sm:py-6">
+        <div className="grid grid-cols-4 divide-x divide-brand-200/70">
+          {features.map((f, i) => {
+            const Icon = ICON_MAP[f.iconName] || Leaf;
+            return (
+              <div
+                key={f.id || i}
+                className="flex flex-col items-center justify-center text-center px-1 sm:px-3 py-1 group"
+              >
+                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-brand-800 group-hover:text-forest-700 transition-colors mb-1 sm:mb-1.5">
+                  <Icon className="w-4 h-4 sm:w-5 sm:h-5 stroke-[1.8]" />
+                </div>
+                <div className="text-[11px] sm:text-xs font-bold text-brand-950 leading-tight">
+                  {f.title}
+                </div>
+                <div className="text-[10px] sm:text-[11px] font-medium text-brand-600/90 leading-tight">
+                  {f.subtitle}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </section>
   );

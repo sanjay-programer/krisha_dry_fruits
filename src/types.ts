@@ -1,13 +1,16 @@
-export type CashewGrade = 'W180' | 'W210' | 'W240' | 'W320' | 'W450';
+export type StandardCashewGrade = 'W180' | 'W210' | 'W240' | 'W320' | 'W450';
+export type CashewGrade = string;
 
 export type CashewType =
   | 'Raw'
   | 'Roasted'
   | 'Roasted & Salted'
-  | 'Spiced'
-  | 'Honey Glazed';
+  | 'Fried & Salted'
+  | 'Pepper Spiced'
+  | 'Honey Glazed'
+  | string;
 
-export type Quantity = '250g' | '500g' | '1kg' | '2kg' | '5kg';
+export type Quantity = '250g' | '500g' | '1kg' | '2kg' | '5kg' | string;
 
 export interface VariantPrice {
   quantity: Quantity;
@@ -36,6 +39,7 @@ export interface Product {
   rating: number;
   reviewCount: number;
   badge: string;
+  active?: boolean;
   types: GradeType[];
 }
 
@@ -55,13 +59,19 @@ export interface CustomerInfo {
   email: string;
   phone: string;
   address: string;
+  doorNo?: string;
   city: string;
   state: string;
   pincode: string;
   notes: string;
+  lat?: number;
+  lng?: number;
 }
 
+export type OrderStatus = 'pending' | 'confirmed' | 'packed' | 'shipped' | 'delivered' | 'cancelled' | string;
+
 export interface OrderDetails {
+  _id?: string;
   orderId: string;
   items: CartItem[];
   subtotal: number;
@@ -71,4 +81,9 @@ export interface OrderDetails {
   paymentMethod: string;
   placedAt: string;
   estimatedDelivery: string;
+  status?: OrderStatus;
+  trackingNumber?: string;
+  notes?: string;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
 }

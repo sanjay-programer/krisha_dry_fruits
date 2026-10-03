@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Mail, Phone, MapPin, Send, Check } from 'lucide-react';
+import { useSiteContent } from '@/site-content';
 
 export default function Contact() {
+  const { contact } = useSiteContent();
   const [sent, setSent] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', message: '' });
 
@@ -17,25 +19,37 @@ export default function Contact() {
       <div className="text-center mb-12">
         <h1 className="font-serif text-3xl lg:text-4xl font-bold text-brand-950 mb-3">Get in Touch</h1>
         <p className="text-brand-600 max-w-lg mx-auto">
-          Questions about our cashews, your order, or anything else? We would love to hear from you.
+          Questions about our cashew varieties, bulk orders, or your delivery? We are here to assist.
         </p>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-8">
-        {/* Contact info */}
+        {/* Contact info cards */}
         <div className="space-y-4">
           {[
-            { icon: MapPin, title: 'Visit Us', lines: ['123 Plantation Road', 'Margao, Goa 403601'] },
-            { icon: Phone, title: 'Call Us', lines: ['+91 98765 43210', 'Mon–Sat, 9am–6pm IST'] },
-            { icon: Mail, title: 'Email Us', lines: ['care@krishadryfruits.in', 'We reply within 24 hours'] },
+            {
+              icon: MapPin,
+              title: 'Visit Us',
+              lines: [contact.address, 'India'],
+            },
+            {
+              icon: Phone,
+              title: 'Call Us',
+              lines: [contact.phone, `Hours: ${contact.hours}`],
+            },
+            {
+              icon: Mail,
+              title: 'Email Us',
+              lines: [contact.email, 'We reply within 24 hours'],
+            },
           ].map((c) => (
             <div key={c.title} className="card p-5">
               <div className="w-10 h-10 rounded-xl bg-brand-100 flex items-center justify-center mb-3">
                 <c.icon className="w-5 h-5 text-brand-600" />
               </div>
               <h3 className="font-serif text-base font-semibold text-brand-900 mb-1">{c.title}</h3>
-              {c.lines.map((l) => (
-                <p key={l} className="text-sm text-brand-600">{l}</p>
+              {c.lines.map((l, i) => (
+                <p key={i} className="text-sm text-brand-600">{l}</p>
               ))}
             </div>
           ))}
@@ -43,7 +57,7 @@ export default function Contact() {
 
         {/* Form */}
         <div className="lg:col-span-2">
-          <div className="card p-6">
+          <div className="card p-6 sm:p-8">
             <h2 className="font-serif text-xl font-semibold text-brand-900 mb-5">Send us a message</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid sm:grid-cols-2 gap-4">
@@ -90,12 +104,12 @@ export default function Contact() {
                 {sent ? (
                   <>
                     <Check className="w-4 h-4" />
-                    Message Sent!
+                    <span>Message Sent!</span>
                   </>
                 ) : (
                   <>
                     <Send className="w-4 h-4" />
-                    Send Message
+                    <span>Send Message</span>
                   </>
                 )}
               </button>

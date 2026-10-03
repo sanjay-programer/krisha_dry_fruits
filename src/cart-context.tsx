@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import type { CartItem, Product, CashewType, Quantity, VariantPrice } from './types';
 
 interface CartContextValue {
@@ -13,8 +13,25 @@ interface CartContextValue {
 
 const CartContext = createContext<CartContextValue | null>(null);
 
+const CART_STORAGE_KEY = 'krisha_cart_items_v1';
+
 export function CartProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<CartItem[]>([]);
+  const [items, setItems] = useState<CartItem[]>(() => {
+    try {
+      const saved = localStorage.getItem(CART_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(items));
+    } catch {
+      // ignore
+    }
+  }, [items]);
 
   const addItem = useCallback(
     (product: Product, type: CashewType, quantity: Quantity, price: VariantPrice, image: string) => {

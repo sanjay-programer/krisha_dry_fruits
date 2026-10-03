@@ -45,7 +45,7 @@ const GradeTypeSchema = new Schema<IGradeType>({
 
 const ProductSchema = new Schema<IProduct>(
   {
-    grade: { type: String, required: true, unique: true },
+    grade: { type: String, required: true },
     name: { type: String, required: true },
     tagline: { type: String, required: true },
     description: { type: String, required: true },

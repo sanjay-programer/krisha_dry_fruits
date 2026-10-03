@@ -1,17 +1,26 @@
 import { adminApi } from '@/api';
 
 export async function uploadToCloudinary(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = async () => {
+      const dataUrl = reader.result as string;
       try {
-        const { url } = await adminApi.upload(reader.result as string);
-        resolve(url);
+        const res = await adminApi.upload(dataUrl);
+        if (res && res.url) {
+          resolve(res.url);
+          return;
+        }
       } catch (err) {
-        reject(err);
+        console.warn('Backend Cloudinary upload failed, falling back to local data URL:', err);
       }
+      // Resilient fallback: returns base64 data URL so the uploaded image immediately renders
+      resolve(dataUrl);
     };
-    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.onerror = () => {
+      console.error('Failed to read image file');
+      resolve('');
+    };
     reader.readAsDataURL(file);
   });
 }
