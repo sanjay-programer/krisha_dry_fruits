@@ -19,11 +19,15 @@ export const handler: Handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
   if (!isAuthorized(event)) return { statusCode: 401, headers, body: JSON.stringify({ error: 'Unauthorized' }) };
 
+  const action = event.queryStringParameters?.action;
+  if (action === 'verify') {
+    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, authorized: true }) };
+  }
+
   try {
     await connectDB();
     const method = event.httpMethod;
     const id = event.queryStringParameters?.id;
-    const action = event.queryStringParameters?.action;
 
     // Seed products from static data
     if (method === 'POST' && action === 'seed') {

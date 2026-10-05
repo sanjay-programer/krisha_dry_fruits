@@ -1,9 +1,16 @@
 // In dev with `netlify dev`, functions run on port 8888
-// In prod, netlify.toml redirects /api/* → /.netlify/functions/:splat
+// In prod, netlify.toml redirects /api/* -> /.netlify/functions/:splat
 const BASE = import.meta.env.DEV
   ? 'http://localhost:8888/.netlify/functions'
   : '/api';
-const ADMIN_SECRET = import.meta.env.VITE_ADMIN_PASSKEY || import.meta.env.VITE_ADMIN_SECRET || 'krisha_admin_2024';
+
+function getAdminSecret(): string {
+  if (typeof window !== 'undefined') {
+    const sessionPasskey = sessionStorage.getItem('admin_passkey_value');
+    if (sessionPasskey) return sessionPasskey;
+  }
+  return import.meta.env.VITE_ADMIN_PASSKEY || import.meta.env.VITE_ADMIN_SECRET || '';
+}
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, options);
@@ -15,10 +22,11 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 function adminHeaders(extra?: Record<string, string>) {
-  return { 'Content-Type': 'application/json', Authorization: `Bearer ${ADMIN_SECRET}`, ...extra };
+  const secret = getAdminSecret();
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}`, ...extra };
 }
 
-// ── Public ──────────────────────────────────────────────────────────────────
+// ── Public ───────────────────────────────────────────────────────────────────
 
 export const api = {
   products: {

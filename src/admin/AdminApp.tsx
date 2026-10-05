@@ -12,7 +12,7 @@ import AdminAdmins from './components/AdminAdmins';
 
 export type AdminPage = 'dashboard' | 'content' | 'products' | 'orders' | 'order-detail' | 'admins';
 
-const ADMIN_SECRET = import.meta.env.VITE_ADMIN_PASSKEY || import.meta.env.VITE_ADMIN_SECRET || 'krisha_admin_2024';
+const ADMIN_SECRET = import.meta.env.VITE_ADMIN_PASSKEY || import.meta.env.VITE_ADMIN_SECRET || '';
 
 export default function AdminApp() {
   const { isSignedIn, user, isLoaded } = useUser();
@@ -21,6 +21,7 @@ export default function AdminApp() {
   const [passkeyAuthed, setPasskeyAuthed] = useState(() => sessionStorage.getItem('admin_passkey_auth') === 'true');
   const [password, setPassword] = useState('');
   const [passkeyError, setPasskeyError] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
   const [showPasskeyFallback, setShowPasskeyFallback] = useState(false);
   const [page, setPage] = useState<AdminPage>('dashboard');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
@@ -29,18 +30,49 @@ export default function AdminApp() {
   const isGoogleAdmin = Boolean(isSignedIn && userEmail && isAdminAuthorized(userEmail));
   const isAuthed = isGoogleAdmin || passkeyAuthed;
 
-  const handlePasskeyLogin = (e: React.FormEvent) => {
+  const handlePasskeyLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === ADMIN_SECRET) {
+    const entered = password.trim();
+    if (!entered) {
+      setPasskeyError('Please enter the security passkey.');
+      return;
+    }
+
+    // 1. Direct match if frontend env var is provided
+    if (ADMIN_SECRET && entered === ADMIN_SECRET) {
       sessionStorage.setItem('admin_passkey_auth', 'true');
+      sessionStorage.setItem('admin_passkey_value', entered);
       setPasskeyAuthed(true);
-    } else {
-      setPasskeyError('Incorrect secret key. Please check your credentials.');
+      return;
+    }
+
+    // 2. Live verification against the Netlify Function backend
+    setIsVerifying(true);
+    setPasskeyError('');
+    try {
+      const endpoint =
+        (import.meta.env.DEV ? 'http://localhost:8888/.netlify/functions' : '/api') +
+        '/admin-products?action=verify';
+      const res = await fetch(endpoint, {
+        headers: { Authorization: `Bearer ${entered}` },
+      });
+      if (res.ok) {
+        sessionStorage.setItem('admin_passkey_auth', 'true');
+        sessionStorage.setItem('admin_passkey_value', entered);
+        setPasskeyAuthed(true);
+      } else {
+        setPasskeyError('Incorrect secret key. Please check your credentials.');
+      }
+    } catch {
+      setPasskeyError('Authentication failed. Please verify your connection.');
+    } finally {
+      setIsVerifying(false);
     }
   };
 
   const handleLogout = async () => {
     sessionStorage.removeItem('admin_passkey_auth');
+    sessionStorage.removeItem('admin_passkey_value');
     setPasskeyAuthed(false);
     if (isSignedIn) {
       await clerk.signOut();
@@ -189,9 +221,10 @@ export default function AdminApp() {
                   )}
                   <button
                     type="submit"
-                    className="w-full btn-secondary py-2 text-xs font-semibold flex items-center justify-center gap-1.5"
+                    disabled={isVerifying}
+                    className="w-full btn-secondary py-2 text-xs font-semibold flex items-center justify-center gap-1.5 disabled:opacity-60"
                   >
-                    <span>Authenticate Passkey</span>
+                    <span>{isVerifying ? 'Verifying Passkey...' : 'Authenticate Passkey'}</span>
                   </button>
                 </form>
               )}
