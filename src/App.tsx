@@ -12,14 +12,15 @@ import CheckoutPage from '@/components/CheckoutPage';
 import OrderConfirmation from '@/components/OrderConfirmation';
 import GradesGuide from '@/components/GradesGuide';
 import GradeSelectorSection from '@/components/GradeSelectorSection';
+import StoreLocationSection from '@/components/StoreLocationSection';
 import About from '@/components/About';
 import Contact from '@/components/Contact';
 import MyOrders from '@/components/MyOrders';
 import { api } from '@/api';
-import { PRODUCTS } from '@/data';
 import type { Product, OrderDetails } from '@/types';
 import { saveCustomerOrder } from '@/orders-storage';
 import { useStoredProducts, syncWithServerProducts } from '@/products-storage';
+import { syncWithServerContent } from '@/site-content';
 
 type Page = 'home' | 'products' | 'grades' | 'about' | 'contact' | 'product' | 'checkout' | 'confirmation' | 'myorders';
 
@@ -49,6 +50,14 @@ function App() {
   const [productsLoading, setProductsLoading] = useState(false);
 
   useEffect(() => {
+    api.content.get()
+      .then((data) => {
+        if (data && !data.error) {
+          syncWithServerContent(data);
+        }
+      })
+      .catch(() => {});
+
     setProductsLoading(true);
     api.products.list()
       .then((data) => {
@@ -254,8 +263,9 @@ function App() {
                 onView={viewProduct}
                 loading={productsLoading}
                 title="Our Premium Cashew Collection"
-                subtitle={`${availableGrades.length} artisanal grades · ${products.filter((p) => p.active !== false).length} distinct harvests & preparations across Goa & Karnataka.`}
+                subtitle={`${availableGrades.length} artisanal grades • ${products.filter((p) => p.active !== false).length} distinct harvests & preparations across Goa & Karnataka.`}
               />
+              <StoreLocationSection />
               <Testimonials />
             </>
           )}
@@ -384,7 +394,7 @@ function App() {
                         searchQuery ? `Search: "${searchQuery}"` : null,
                       ]
                         .filter(Boolean)
-                        .join(' · ')}
+                        .join(' • ')}
                     </span>
                     <button
                       onClick={() => {

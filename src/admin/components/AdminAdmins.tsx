@@ -144,7 +144,7 @@ export default function AdminAdmins() {
 
           <div className="space-y-3">
             {emails.map((email) => {
-              const isPermanent = email.toLowerCase() === PERMANENT_ADMIN_EMAIL.toLowerCase();
+              const isPermanent = Boolean(PERMANENT_ADMIN_EMAIL && email.toLowerCase() === PERMANENT_ADMIN_EMAIL.toLowerCase());
               return (
                 <div
                   key={email}

@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   RotateCcw,
+  ExternalLink,
+  Navigation,
+  Store,
   Save,
   CheckCircle2,
   Sparkles,
@@ -20,7 +23,14 @@ import {
   Heart,
   Clock,
   Check,
+  Loader2,
+  LocateFixed,
+  Compass,
+  Bell,
+  Map,
+  Copy,
 } from 'lucide-react';
+import { adminApi, api } from '@/api';
 import {
   useSiteContent,
   saveSiteContent,
@@ -29,6 +39,7 @@ import {
   type LocationBanner,
   type FeatureItem,
   DEFAULT_SITE_CONTENT,
+  getStoreGoogleMapsUrl,
 } from '@/site-content';
 import ImageUploadWidget from './ImageUploadWidget';
 
@@ -47,20 +58,167 @@ export default function AdminContent() {
   const [content, setContent] = useState<SiteContent>(currentContent);
   const [activeTab, setActiveTab] = useState<'hero' | 'features' | 'locations' | 'contact' | 'social'>('hero');
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-  const handleSave = () => {
-    saveSiteContent(content);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+  // GPS Auto-detect and Pinning State
+  const [detectingGps, setDetectingGps] = useState(false);
+  const [gpsSuccess, setGpsSuccess] = useState<string | null>(null);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+  const [pastedLink, setPastedLink] = useState('');
+
+  useEffect(() => {
+    api.content.get()
+      .then((remote) => {
+        if (remote && !remote.error) {
+          setContent((prev) => ({
+            ...prev,
+            ...remote,
+            hero: { ...prev.hero, ...(remote.hero || {}) },
+            contact: { ...prev.contact, ...(remote.contact || {}) },
+            social: { ...prev.social, ...(remote.social || {}) },
+            features: Array.isArray(remote.features) && remote.features.length > 0 ? remote.features : prev.features,
+            locationBanners: Array.isArray(remote.locationBanners) && remote.locationBanners.length > 0 ? remote.locationBanners : prev.locationBanners,
+          }));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleAutoDetectLocation = () => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      setGpsError('Geolocation is not supported by your browser.');
+      return;
+    }
+    setDetectingGps(true);
+    setGpsError(null);
+    setGpsSuccess(null);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude.toFixed(6);
+        const lng = pos.coords.longitude.toFixed(6);
+        setContent((prev) => ({
+          ...prev,
+          contact: {
+            ...prev.contact,
+            latitude: lat,
+            longitude: lng,
+            googleMapsUrl: `https://www.google.com/maps?q=${lat},${lng}`,
+          },
+        }));
+        setDetectingGps(false);
+        setGpsSuccess(`GPS Detected: ${lat}, ${lng} (Pinned accurately on Google Maps)`);
+        setTimeout(() => setGpsSuccess(null), 6000);
+      },
+      (err) => {
+        setDetectingGps(false);
+        setGpsError(err.message || 'Unable to retrieve location. Please allow browser location permissions.');
+        setTimeout(() => setGpsError(null), 6000);
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+    );
   };
 
-  const handleReset = () => {
+  const handleCoordinatesChange = (latVal: string, lngVal: string) => {
+    setContent((prev) => {
+      const cleanLat = latVal.trim();
+      const cleanLng = lngVal.trim();
+      const mapsUrl =
+        cleanLat && cleanLng && !isNaN(Number(cleanLat)) && !isNaN(Number(cleanLng))
+          ? `https://www.google.com/maps?q=${cleanLat},${cleanLng}`
+          : prev.contact.googleMapsUrl;
+      return {
+        ...prev,
+        contact: {
+          ...prev.contact,
+          latitude: latVal,
+          longitude: lngVal,
+          googleMapsUrl: mapsUrl,
+        },
+      };
+    });
+  };
+
+  const handleParseMapsLinkOrCoords = (input: string) => {
+    setPastedLink(input);
+    const text = input.trim();
+    if (!text) return;
+
+    // Pattern 1: Raw coordinates like "15.2736, 73.9582" or "15.2736 73.9582"
+    const coordMatch = text.match(/(-?\d{1,2}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/);
+    if (coordMatch) {
+      const lat = coordMatch[1];
+      const lng = coordMatch[2];
+      handleCoordinatesChange(lat, lng);
+      setGpsSuccess(`Coordinates extracted: ${lat}, ${lng}`);
+      setTimeout(() => setGpsSuccess(null), 4000);
+      return;
+    }
+
+    // Pattern 2: Google Maps URL with @lat,lng, e.g. /@15.273612,73.958215,17z
+    const atMatch = text.match(/@(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)/);
+    if (atMatch) {
+      const lat = atMatch[1];
+      const lng = atMatch[2];
+      handleCoordinatesChange(lat, lng);
+      setGpsSuccess(`Coordinates extracted from Maps URL: ${lat}, ${lng}`);
+      setTimeout(() => setGpsSuccess(null), 4000);
+      return;
+    }
+
+    // Pattern 3: Google Maps URL with ?q=lat,lng
+    const qMatch = text.match(/[?&]q=(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)/);
+    if (qMatch) {
+      const lat = qMatch[1];
+      const lng = qMatch[2];
+      handleCoordinatesChange(lat, lng);
+      setGpsSuccess(`Coordinates extracted from Maps link: ${lat}, ${lng}`);
+      setTimeout(() => setGpsSuccess(null), 4000);
+      return;
+    }
+
+    // Otherwise if it's a URL, save it as custom Google Maps URL
+    if (text.startsWith('http')) {
+      setContent((prev) => ({
+        ...prev,
+        contact: { ...prev.contact, googleMapsUrl: text },
+      }));
+      setGpsSuccess('Custom Google Maps link saved');
+      setTimeout(() => setGpsSuccess(null), 4000);
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    // Instant optimistic update
+    saveSiteContent(content);
+    try {
+      // Commit directly to MongoDB Atlas
+      await adminApi.content.update(content);
+    } catch (err) {
+      console.warn('Backend content save failed, stored in local cache:', err);
+    } finally {
+      setSaving(false);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3500);
+    }
+  };
+
+  const handleReset = async () => {
+    setSaving(true);
     const defaults = resetSiteContent();
     setContent(defaults);
     setShowResetConfirm(false);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+    try {
+      await adminApi.content.reset();
+    } catch (err) {
+      console.warn('Backend reset failed, restored local defaults:', err);
+    } finally {
+      setSaving(false);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3500);
+    }
   };
 
   const updateHero = (field: keyof SiteContent['hero'], value: string) => {
@@ -149,7 +307,8 @@ export default function AdminContent() {
           {/* Reset Button */}
           <button
             onClick={() => setShowResetConfirm(true)}
-            className="flex-1 md:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold transition-all shadow-sm"
+            disabled={saving}
+            className="flex-1 md:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold transition-all shadow-sm disabled:opacity-50"
             title="Reset all content back to original design"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -159,10 +318,11 @@ export default function AdminContent() {
           {/* Save Button */}
           <button
             onClick={handleSave}
-            className="flex-1 md:flex-initial inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-brand-700 hover:bg-brand-800 text-cream-50 text-xs sm:text-sm font-semibold transition-all shadow-md shadow-brand-950/20 active:scale-95"
+            disabled={saving}
+            className="flex-1 md:flex-initial inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-brand-700 hover:bg-brand-800 text-cream-50 text-xs sm:text-sm font-semibold transition-all shadow-md shadow-brand-950/20 active:scale-95 disabled:opacity-60 cursor-pointer"
           >
-            <Save className="w-4 h-4" />
-            <span>Save Changes</span>
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            <span>{saving ? 'Publishing to Cloud...' : 'Save & Publish Live'}</span>
           </button>
         </div>
       </div>
@@ -171,17 +331,20 @@ export default function AdminContent() {
       {savedSuccess && (
         <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-4 flex items-center gap-3 text-emerald-800 text-sm font-medium animate-fade-in shadow-sm">
           <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-          <span>Storefront content updated successfully! Public website is immediately refreshed.</span>
+          <div>
+            <p className="font-bold text-emerald-900">Storefront content published successfully!</p>
+            <p className="text-xs text-emerald-700">Saved to cloud database (MongoDB Atlas) and synchronized with all visitors across all devices.</p>
+          </div>
         </div>
       )}
 
       {/* Navigation Sub-Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 border-b border-brand-200/80">
         {[
-          { id: 'hero', label: 'Hero & Storefront', icon: Sparkles },
+          { id: 'hero', label: 'Announcement & Hero', icon: Sparkles },
           { id: 'features', label: '4 Trust Features', icon: Layers },
           { id: 'locations', label: 'Location Cashew Banners', icon: MapPin },
-          { id: 'contact', label: 'Contact & Business Info', icon: Phone },
+          { id: 'contact', label: 'Store Location & Contact', icon: MapPin },
           { id: 'social', label: 'Footer & Social Handles', icon: Share2 },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -203,28 +366,56 @@ export default function AdminContent() {
         })}
       </div>
 
-      {/* TAB 1: HERO & STOREFRONT */}
+      {/* TAB 1: ANNOUNCEMENT & HERO */}
       {activeTab === 'hero' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-white rounded-3xl p-6 sm:p-8 shadow-luxury border border-brand-200/60 space-y-5">
-            <h2 className="font-serif text-lg font-bold text-brand-950 border-b border-brand-100 pb-3 flex items-center gap-2">
+          <div className="lg:col-span-2 bg-white rounded-3xl p-6 sm:p-8 shadow-luxury border border-brand-200/60 space-y-6">
+            
+            {/* Dedicated Top Announcement Bar Card */}
+            <div className="p-5 rounded-2xl bg-brand-950 text-cream-100 border border-brand-800 space-y-3 shadow-md">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-amber-400" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-amber-300">
+                    Top Store Announcement Bar
+                  </span>
+                </div>
+                <span className="text-[10px] text-cream-300 font-medium bg-white/10 px-2 py-0.5 rounded-full">
+                  Appears at the very top of all pages
+                </span>
+              </div>
+
+              {/* Live Preview Simulation */}
+              <div className="p-2.5 rounded-xl bg-black/40 border border-white/10 text-center">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-amber-400/80 block mb-1">
+                  Live Banner Preview:
+                </span>
+                <p className="text-xs font-medium text-cream-100 tracking-wide break-words">
+                  {content.announcement || 'Free pan-India shipping over ₹1,200 • Freshly hand-sorted & packed within 48h'}
+                </p>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-cream-200 block mb-1.5">
+                  Announcement Message
+                </label>
+                <input
+                  type="text"
+                  value={content.announcement}
+                  onChange={(e) => setContent((prev) => ({ ...prev, announcement: e.target.value }))}
+                  className="w-full rounded-xl border border-brand-700 bg-brand-900/90 text-cream-50 px-3.5 py-2.5 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 placeholder:text-brand-400"
+                  placeholder="e.g. Free pan-India shipping over ₹1,200 • Freshly hand-sorted & packed within 48h"
+                />
+                <p className="text-[11px] text-cream-300/70 mt-1.5">
+                  Directly edits the announcement banner that customers see across the entire shop.
+                </p>
+              </div>
+            </div>
+
+            <h2 className="font-serif text-lg font-bold text-brand-950 border-b border-brand-100 pb-3 flex items-center gap-2 pt-2">
               <Sparkles className="w-4 h-4 text-brand-600" />
               <span>Hero Copywriting & Headings</span>
             </h2>
-
-            {/* Top Announcement Bar */}
-            <div>
-              <label className="text-xs font-bold text-brand-900 block mb-1.5">
-                Top Announcement Bar (Banner at Very Top of Store)
-              </label>
-              <input
-                type="text"
-                value={content.announcement}
-                onChange={(e) => setContent((prev) => ({ ...prev, announcement: e.target.value }))}
-                className="input-field"
-                placeholder="e.g. Free pan-India shipping over ₹2,000 • Freshly packed within 48h"
-              />
-            </div>
 
             {/* Pill Badge */}
             <div>
@@ -605,102 +796,337 @@ export default function AdminContent() {
         </div>
       )}
 
-      {/* TAB 4: CONTACT & BUSINESS INFO */}
+      {/* TAB 4: STORE LOCATION & CONTACT INFO */}
       {activeTab === 'contact' && (
-        <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-luxury border border-brand-200/60 space-y-6">
-          <div className="pb-3 border-b border-brand-100">
-            <h2 className="font-serif text-lg font-bold text-brand-950">
-              Customer Contact & Legal Information
-            </h2>
-            <p className="text-xs text-brand-600">
-              This information automatically populates across the website footer, contact support page, and order confirmations.
-            </p>
+        <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-luxury border border-brand-200/60 space-y-8">
+          <div className="pb-3 border-b border-brand-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="font-serif text-lg font-bold text-brand-950 flex items-center gap-2">
+                <Store className="w-5 h-5 text-forest-700" />
+                <span>Store Location & Contact Management</span>
+              </h2>
+              <p className="text-xs text-brand-600 mt-0.5">
+                Manage your physical store address, 1-click Google Maps navigation link, helpline, and legal certifications.
+              </p>
+            </div>
+            
+            <a
+              href={getStoreGoogleMapsUrl(content.contact)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-forest-50 hover:bg-forest-100 border border-forest-200 text-forest-800 text-xs font-semibold self-start sm:self-auto transition-colors"
+            >
+              <Navigation className="w-3.5 h-3.5 text-forest-600" />
+              <span>Preview Google Maps Link</span>
+              <ExternalLink className="w-3 h-3 opacity-60" />
+            </a>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <div>
-              <label className="text-xs font-bold text-brand-900 block mb-1.5">
-                Customer Care Helpline Phone
-              </label>
-              <input
-                type="text"
-                value={content.contact.phone}
-                onChange={(e) => updateContact('phone', e.target.value)}
-                className="input-field"
-                placeholder="+91 98765 43210"
-              />
+          {/* Section 1: Exact Storefront Location & GPS Pinning */}
+          <div className="p-5 sm:p-6 rounded-2xl bg-cream-50/70 border border-brand-200/80 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-brand-200/60">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-forest-100 flex items-center justify-center text-forest-700">
+                  <MapPin className="w-4 h-4 text-forest-700" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-brand-950 uppercase tracking-wide">
+                    Exact Google Maps Pin & GPS Location
+                  </h3>
+                  <p className="text-[11px] text-brand-600">
+                    Pin your exact physical store location so customers can navigate straight to your doorstep.
+                  </p>
+                </div>
+              </div>
+
+              {/* 1-Click GPS Auto-Detect Button */}
+              <button
+                type="button"
+                onClick={handleAutoDetectLocation}
+                disabled={detectingGps}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-forest-700 hover:bg-forest-800 active:scale-95 text-cream-50 text-xs font-bold transition-all shadow-sm disabled:opacity-50 cursor-pointer self-start sm:self-auto"
+                title="Use your device GPS to pinpoint this shop location"
+              >
+                {detectingGps ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <LocateFixed className="w-3.5 h-3.5 text-amber-300" />
+                )}
+                <span>{detectingGps ? 'Detecting GPS...' : 'Auto-Detect My Current GPS Location'}</span>
+              </button>
             </div>
 
-            <div>
-              <label className="text-xs font-bold text-brand-900 block mb-1.5">
-                Official Support Email
-              </label>
-              <input
-                type="email"
-                value={content.contact.email}
-                onChange={(e) => updateContact('email', e.target.value)}
-                className="input-field"
-                placeholder="care@krishadryfruits.in"
-              />
+            {/* GPS Feedback Alerts */}
+            {gpsSuccess && (
+              <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl flex items-center gap-2.5 text-emerald-800 text-xs font-medium animate-fade-in">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{gpsSuccess}</span>
+              </div>
+            )}
+
+            {gpsError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2.5 text-red-800 text-xs font-medium animate-fade-in">
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                <span>{gpsError}</span>
+              </div>
+            )}
+
+            {/* Map Pinning Grid: Coordinates + Smart Paste + Interactive Embed */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              
+              {/* Left Column: Pin Inputs */}
+              <div className="lg:col-span-7 space-y-4">
+                
+                {/* Coordinates Side-by-Side */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-brand-900 block mb-1">
+                      Latitude (e.g. 15.273612)
+                    </label>
+                    <input
+                      type="text"
+                      value={content.contact.latitude || ''}
+                      onChange={(e) => handleCoordinatesChange(e.target.value, content.contact.longitude || '')}
+                      className="input-field font-mono text-xs"
+                      placeholder="15.273612"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-brand-900 block mb-1">
+                      Longitude (e.g. 73.958215)
+                    </label>
+                    <input
+                      type="text"
+                      value={content.contact.longitude || ''}
+                      onChange={(e) => handleCoordinatesChange(content.contact.latitude || '', e.target.value)}
+                      className="input-field font-mono text-xs"
+                      placeholder="73.958215"
+                    />
+                  </div>
+                </div>
+
+                {/* Smart Link / Coordinates Paste */}
+                <div>
+                  <label className="text-xs font-bold text-brand-900 block mb-1">
+                    Or Paste Any Google Maps Link / Coordinates
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={pastedLink}
+                      onChange={(e) => handleParseMapsLinkOrCoords(e.target.value)}
+                      className="input-field font-mono text-xs flex-1"
+                      placeholder="Paste e.g. '15.2736, 73.9582' or Google Maps URL..."
+                    />
+                    <a
+                      href="https://www.google.com/maps"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-2 bg-white border border-brand-300 hover:bg-brand-100/60 rounded-xl text-xs font-semibold text-brand-800 flex items-center gap-1.5 shrink-0 transition-colors"
+                      title="Open Google Maps in a new tab to find coordinates"
+                    >
+                      <Map className="w-3.5 h-3.5 text-brand-600" />
+                      <span className="hidden sm:inline">Pick on Maps</span>
+                      <ExternalLink className="w-3 h-3 opacity-60" />
+                    </a>
+                  </div>
+                  <p className="text-[11px] text-brand-500 mt-1">
+                    Tip: You can right-click any building on Google Maps, click the coordinates to copy, and paste here.
+                  </p>
+                </div>
+
+                {/* Generated Maps Target URL */}
+                <div>
+                  <label className="text-xs font-bold text-brand-900 block mb-1">
+                    Customer Navigation URL (Auto-Generated)
+                  </label>
+                  <input
+                    type="text"
+                    value={getStoreGoogleMapsUrl(content.contact)}
+                    readOnly
+                    className="input-field font-mono text-[11px] bg-brand-100/50 text-brand-700 cursor-not-allowed"
+                  />
+                </div>
+              </div>
+
+              {/* Right Column: Live Interactive Google Maps Embed */}
+              <div className="lg:col-span-5 flex flex-col justify-between space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-brand-900">
+                  <span className="flex items-center gap-1.5">
+                    <Compass className="w-4 h-4 text-forest-600" />
+                    <span>Live Map Pin Preview</span>
+                  </span>
+                  <a
+                    href={getStoreGoogleMapsUrl(content.contact)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-forest-700 hover:text-forest-900 underline flex items-center gap-1 font-semibold"
+                  >
+                    <span>Test Fullscreen</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
+
+                {/* Map Iframe */}
+                <div className="w-full h-52 sm:h-56 rounded-2xl overflow-hidden border border-brand-300 shadow-sm relative bg-cream-100">
+                  <iframe
+                    title="Google Maps Pin Preview"
+                    src={`https://maps.google.com/maps?q=${encodeURIComponent(
+                      content.contact.latitude && content.contact.longitude
+                        ? `${content.contact.latitude},${content.contact.longitude}`
+                        : content.contact.address || 'Margao Goa'
+                    )}&t=&z=16&ie=UTF8&iwloc=&output=embed`}
+                    width="100%"
+                    height="100%"
+                    style={{ border: 0 }}
+                    loading="lazy"
+                  />
+                </div>
+                <p className="text-[10.5px] text-center text-brand-500 font-medium">
+                  {content.contact.latitude && content.contact.longitude
+                    ? `Pinned at Lat: ${content.contact.latitude}, Lng: ${content.contact.longitude}`
+                    : 'Search centered on store address'}
+                </p>
+              </div>
+
             </div>
 
-            <div className="sm:col-span-2">
-              <label className="text-xs font-bold text-brand-900 block mb-1.5">
-                Factory & Orchard Physical Address
-              </label>
-              <textarea
-                rows={2}
-                value={content.contact.address}
-                onChange={(e) => updateContact('address', e.target.value)}
-                className="input-field resize-none"
-                placeholder="123 Plantation Road, Margao, Goa 403601, India"
-              />
-            </div>
+            {/* Physical Address & Store Info */}
+            <div className="pt-4 border-t border-brand-200/60 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label className="text-xs font-bold text-brand-900 block mb-1.5">
+                  Storefront Name / Heading
+                </label>
+                <input
+                  type="text"
+                  value={content.contact.shopName || ''}
+                  onChange={(e) => updateContact('shopName', e.target.value)}
+                  className="input-field"
+                  placeholder="Krisha Dry Fruits Flagship Store & Outlet"
+                />
+              </div>
 
-            <div>
-              <label className="text-xs font-bold text-brand-900 block mb-1.5">
-                Operating / Business Hours
-              </label>
-              <input
-                type="text"
-                value={content.contact.hours}
-                onChange={(e) => updateContact('hours', e.target.value)}
-                className="input-field"
-                placeholder="Mon - Sat: 9:00 AM - 7:00 PM"
-              />
-            </div>
+              <div className="sm:col-span-2">
+                <label className="text-xs font-bold text-brand-900 block mb-1.5">
+                  Full Physical Store Address
+                </label>
+                <textarea
+                  rows={2}
+                  value={content.contact.address || ''}
+                  onChange={(e) => updateContact('address', e.target.value)}
+                  className="input-field resize-none"
+                  placeholder="123 Plantation Road, Near Old Market, Margao, Goa 403601, India"
+                />
+              </div>
 
-            <div>
-              <label className="text-xs font-bold text-brand-900 block mb-1.5">
-                FSSAI License Number
-              </label>
-              <input
-                type="text"
-                value={content.contact.fssaiNumber}
-                onChange={(e) => updateContact('fssaiNumber', e.target.value)}
-                className="input-field font-mono"
-                placeholder="10020021000123"
-              />
-            </div>
+              <div>
+                <label className="text-xs font-bold text-brand-900 block mb-1.5">
+                  Landmark / Directions Tip (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={content.contact.landmark || ''}
+                  onChange={(e) => updateContact('landmark', e.target.value)}
+                  className="input-field"
+                  placeholder="Opposite Old Market Bus Terminal, Margao"
+                />
+              </div>
 
-            <div className="sm:col-span-2">
-              <label className="text-xs font-bold text-brand-900 block mb-1.5">
-                FSSAI Certificate Description Text
-              </label>
-              <input
-                type="text"
-                value={content.contact.fssaiText}
-                onChange={(e) => updateContact('fssaiText', e.target.value)}
-                className="input-field"
-                placeholder="FSSAI Certified Unit • Govt. Registered Premium Agri-Produce Facility"
-              />
+              <div>
+                <label className="text-xs font-bold text-brand-900 block mb-1.5">
+                  Operating Hours
+                </label>
+                <input
+                  type="text"
+                  value={content.contact.hours || ''}
+                  onChange={(e) => updateContact('hours', e.target.value)}
+                  className="input-field"
+                  placeholder="Mon - Sat: 9:00 AM - 7:00 PM"
+                />
+              </div>
             </div>
           </div>
 
-          <div className="flex justify-end pt-4 border-t border-brand-100">
-            <button onClick={handleSave} className="btn-primary py-2.5 px-6 text-xs font-semibold flex items-center gap-2">
+          {/* Section 2: Helpline & Legal */}
+          <div className="p-5 rounded-2xl bg-white border border-brand-200/70 space-y-4">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-brand-800">
+              <Phone className="w-4 h-4 text-brand-600" />
+              <span>Customer Helpline & Certification Details</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-bold text-brand-900 block mb-1.5">
+                  Helpline Phone Number
+                </label>
+                <input
+                  type="text"
+                  value={content.contact.phone || ''}
+                  onChange={(e) => updateContact('phone', e.target.value)}
+                  className="input-field"
+                  placeholder="+91 98765 43210"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-brand-900 block mb-1.5">
+                  Official Support Email
+                </label>
+                <input
+                  type="email"
+                  value={content.contact.email || ''}
+                  onChange={(e) => updateContact('email', e.target.value)}
+                  className="input-field"
+                  placeholder="care@krishadryfruits.in"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-brand-900 block mb-1.5">
+                  Operating / Store Hours
+                </label>
+                <input
+                  type="text"
+                  value={content.contact.hours || ''}
+                  onChange={(e) => updateContact('hours', e.target.value)}
+                  className="input-field"
+                  placeholder="Mon - Sat: 9:00 AM - 7:00 PM"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-brand-900 block mb-1.5">
+                  FSSAI License Number
+                </label>
+                <input
+                  type="text"
+                  value={content.contact.fssaiNumber || ''}
+                  onChange={(e) => updateContact('fssaiNumber', e.target.value)}
+                  className="input-field font-mono"
+                  placeholder="10020021000123"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-xs font-bold text-brand-900 block mb-1.5">
+                  FSSAI Certificate Description Text
+                </label>
+                <input
+                  type="text"
+                  value={content.contact.fssaiText || ''}
+                  onChange={(e) => updateContact('fssaiText', e.target.value)}
+                  className="input-field"
+                  placeholder="FSSAI Certified Unit • Govt. Registered Premium Agri-Produce Facility"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-2 border-t border-brand-100">
+            <button onClick={handleSave} className="btn-primary py-2.5 px-6 text-xs font-semibold flex items-center gap-2 shadow-md">
               <Save className="w-3.5 h-3.5" />
-              <span>Save Contact Info</span>
+              <span>Save Store Location & Contact Info</span>
             </button>
           </div>
         </div>

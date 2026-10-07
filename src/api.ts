@@ -38,6 +38,9 @@ export const api = {
       req<any>('/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(order) }),
     get: (orderId: string) => req<any>(`/orders?orderId=${orderId}`),
   },
+  content: {
+    get: () => req<any>('/content'),
+  },
 };
 
 // ── Admin ────────────────────────────────────────────────────────────────────
@@ -53,6 +56,13 @@ export const adminApi = {
       req<any>(`/admin-products?id=${id}`, { method: 'DELETE', headers: adminHeaders() }),
     seed: () =>
       req<any>('/admin-products?action=seed', { method: 'POST', headers: adminHeaders() }),
+  },
+  content: {
+    get: () => req<any>('/admin-content', { headers: adminHeaders() }),
+    update: (data: any) =>
+      req<any>('/admin-content', { method: 'PUT', headers: adminHeaders(), body: JSON.stringify(data) }),
+    reset: () =>
+      req<any>('/admin-content?action=reset', { method: 'POST', headers: adminHeaders() }),
   },
   orders: {
     list: (params?: { status?: string; search?: string; page?: number }) => {

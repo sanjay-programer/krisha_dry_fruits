@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Lock, ArrowRight, ShieldCheck, ArrowLeft, AlertCircle, LogOut, KeyRound, Sparkles } from 'lucide-react';
 import { useUser, useClerk, SignInButton } from '@clerk/react';
-import { isAdminAuthorized, PERMANENT_ADMIN_EMAIL } from '@/admin-auth';
+import { isAdminAuthorized, addAdminEmail } from '@/admin-auth';
 import AdminLayout from './components/AdminLayout';
 import AdminDashboard from './components/AdminDashboard';
 import AdminContent from './components/AdminContent';
@@ -42,6 +42,9 @@ export default function AdminApp() {
     if (ADMIN_SECRET && entered === ADMIN_SECRET) {
       sessionStorage.setItem('admin_passkey_auth', 'true');
       sessionStorage.setItem('admin_passkey_value', entered);
+      if (userEmail) {
+        addAdminEmail(userEmail);
+      }
       setPasskeyAuthed(true);
       return;
     }
@@ -59,6 +62,9 @@ export default function AdminApp() {
       if (res.ok) {
         sessionStorage.setItem('admin_passkey_auth', 'true');
         sessionStorage.setItem('admin_passkey_value', entered);
+        if (userEmail) {
+          addAdminEmail(userEmail);
+        }
         setPasskeyAuthed(true);
       } else {
         setPasskeyError('Incorrect secret key. Please check your credentials.');
@@ -102,14 +108,42 @@ export default function AdminApp() {
               <span>Security Policy:</span>
             </div>
             <p>
-              Only authorized Google Accounts whitelisted by the permanent administrator (<span className="font-mono text-brand-900">{PERMANENT_ADMIN_EMAIL}</span>) can access this executive management panel.
+              Only authorized administrator Google Accounts can access this executive management panel.
             </p>
           </div>
 
-          <div className="space-y-3">
+          {/* Quick Unlock via Passkey */}
+          <div className="mb-6 p-4 rounded-2xl bg-brand-50/80 border border-brand-200 text-left space-y-3">
+            <p className="text-xs font-bold text-brand-900 flex items-center gap-1.5">
+              <KeyRound className="w-3.5 h-3.5 text-brand-700" />
+              <span>Are you the store administrator?</span>
+            </p>
+            <p className="text-[11px] text-brand-600 leading-snug">
+              Enter the master passkey to unlock access and authorize this Google account.
+            </p>
+            <form onSubmit={handlePasskeyLogin} className="space-y-2">
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter security passkey..."
+                className="input-field text-xs py-2 bg-white"
+              />
+              {passkeyError && <p className="text-[11px] text-red-600 font-medium">{passkeyError}</p>}
+              <button
+                type="submit"
+                disabled={isVerifying}
+                className="w-full btn-primary py-2.5 text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+              >
+                {isVerifying ? 'Verifying...' : 'Unlock & Authorize This Account'}
+              </button>
+            </form>
+          </div>
+
+          <div className="space-y-2.5">
             <button
               onClick={() => clerk.signOut()}
-              className="w-full btn-primary py-3 text-xs sm:text-sm font-semibold flex items-center justify-center gap-2"
+              className="w-full btn-secondary py-2.5 text-xs font-semibold flex items-center justify-center gap-2"
             >
               <LogOut className="w-4 h-4" />
               <span>Switch Google Account</span>
@@ -117,10 +151,9 @@ export default function AdminApp() {
 
             <a
               href="/"
-              className="w-full btn-secondary py-3 text-xs sm:text-sm font-semibold flex items-center justify-center gap-2"
+              className="w-full text-center py-2 text-xs font-medium text-brand-600 hover:text-brand-900 block"
             >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Return to Public Storefront</span>
+              Return to Public Storefront
             </a>
           </div>
         </div>
@@ -182,13 +215,6 @@ export default function AdminApp() {
                   <ArrowRight className="w-4 h-4 ml-auto text-brand-400 group-hover:translate-x-1 transition-transform" />
                 </button>
               </SignInButton>
-            </div>
-
-            {/* Permanent admin note */}
-            <div className="pt-2 text-center">
-              <span className="text-[11px] text-brand-500 font-medium">
-                Permanent Super Admin: <span className="font-semibold text-brand-800">{PERMANENT_ADMIN_EMAIL}</span>
-              </span>
             </div>
 
             {/* Fallback Passkey Accordion */}

@@ -1,124 +1,26 @@
 import { useState, useEffect } from 'react';
-
-export interface FeatureItem {
-  id: string;
-  iconName: 'Leaf' | 'Award' | 'Truck' | 'ShieldCheck' | 'Heart' | 'Clock' | 'Check';
-  title: string;
-  subtitle: string;
-}
-
-export interface LocationBanner {
-  id: string;
-  tag: string;
-  locationKey: string;
-  title: string;
-  subtitle: string;
-  image: string;
-  linkText: string;
-}
-
-export interface HeroContent {
-  badge: string;
-  titleLine1: string;
-  titleLine2: string;
-  titleHighlight: string;
-  subtitle: string;
-  buttonText: string;
-  image: string;
-}
-
-export interface ContactInfo {
-  phone: string;
-  email: string;
-  address: string;
-  hours: string;
-  fssaiNumber: string;
-  fssaiText: string;
-}
-
-export interface SocialLinks {
-  facebook: string;
-  instagram: string;
-  twitter: string;
-  whatsapp: string;
-}
-
-export interface SiteContent {
-  announcement: string;
-  hero: HeroContent;
-  features: FeatureItem[];
-  locationBanners: LocationBanner[];
-  contact: ContactInfo;
-  social: SocialLinks;
-  footerBio: string;
-}
-
-export const DEFAULT_SITE_CONTENT: SiteContent = {
-  announcement: 'Free pan-India shipping over ₹2,000 • Freshly hand-sorted & packed within 48h',
-  hero: {
-    badge: "India's Premium Cashew Brand",
-    titleLine1: 'Cashews,',
-    titleLine2: 'crafted to',
-    titleHighlight: 'perfection.',
-    subtitle: 'From the sun-drenched coast of Goa to your home — hand-sorted, freshly packed, and available in hand-curated premium grades.',
-    buttonText: 'Shop Now',
-    image: '/hero_cashew_bowl.jpg',
-  },
-  features: [
-    { id: '1', iconName: 'Leaf', title: '100%', subtitle: 'Natural' },
-    { id: '2', iconName: 'Award', title: 'Premium', subtitle: 'Quality' },
-    { id: '3', iconName: 'Truck', title: 'Pan-India', subtitle: 'Delivery' },
-    { id: '4', iconName: 'ShieldCheck', title: 'Trusted by', subtitle: 'Thousands' },
-  ],
-  locationBanners: [
-    {
-      id: 'loc-1',
-      tag: '100% Sourced in Goa & Karnataka',
-      locationKey: 'Goa & Karnataka',
-      title: 'Explore Entire Premium Collection',
-      subtitle: 'Sun-dried along the Konkan & Malabar coastline with rich natural buttery sweetness',
-      image: '/hero_cashew_bowl.jpg',
-      linkText: 'View All Cashews',
-    },
-    {
-      id: 'loc-2',
-      tag: 'Goa Coastal Heritage Belt',
-      locationKey: 'Goa',
-      title: 'Margao & Panaji Coastal Groves',
-      subtitle: 'Artisanal harvesting from certified generational family farms along the Arabian Sea',
-      image: '/hero_cashew_bowl.jpg',
-      linkText: 'Explore Goa Harvest',
-    },
-    {
-      id: 'loc-3',
-      tag: 'Karnataka Malnad Foothills',
-      locationKey: 'Karnataka',
-      title: 'Jumbo W180 King Cashews',
-      subtitle: 'Hand-picked mammoth kernels with delicate crunch and naturally high nutrient profile',
-      image: '/hero_cashew_bowl.jpg',
-      linkText: 'Discover W180 Grade',
-    },
-  ],
-  contact: {
-    phone: '+91 98765 43210',
-    email: 'care@krishadryfruits.in',
-    address: '123 Plantation Road, Margao, Goa 403601, India',
-    hours: 'Mon - Sat: 9:00 AM - 7:00 PM',
-    fssaiNumber: '10020021000123',
-    fssaiText: 'FSSAI Certified Unit • Govt. Registered Premium Agri-Produce Facility',
-  },
-  social: {
-    facebook: 'https://facebook.com',
-    instagram: 'https://instagram.com',
-    twitter: 'https://twitter.com',
-    whatsapp: 'https://wa.me/919876543210',
-  },
-  footerBio:
-    'Connoisseur cashews directly sourced from certified multi-generation family farms along the Goa and Karnataka coastal belt. Freshly packed within 48 hours of artisanal processing.',
-};
+export * from './site-content-defaults';
+import {
+  DEFAULT_SITE_CONTENT,
+  type SiteContent,
+  type ContactInfo,
+} from './site-content-defaults';
 
 const STORAGE_KEY = 'kdf_site_content_v2';
 const EVENT_NAME = 'kdf_site_content_change';
+
+export function getStoreGoogleMapsUrl(contact?: Partial<ContactInfo> | null): string {
+  if (contact?.latitude && contact?.longitude && !isNaN(Number(contact.latitude)) && !isNaN(Number(contact.longitude))) {
+    return `https://www.google.com/maps?q=${contact.latitude.trim()},${contact.longitude.trim()}`;
+  }
+  if (contact?.googleMapsUrl && contact.googleMapsUrl.trim().startsWith('http')) {
+    return contact.googleMapsUrl.trim();
+  }
+  const query = [contact?.shopName || 'Krisha Dry Fruits', contact?.address || 'Margao, Goa', contact?.landmark]
+    .filter(Boolean)
+    .join(', ');
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+}
 
 export function getSiteContent(): SiteContent {
   if (typeof window === 'undefined') return DEFAULT_SITE_CONTENT;
@@ -149,6 +51,26 @@ export function saveSiteContent(content: SiteContent): void {
   }
 }
 
+export function syncWithServerContent(serverData: Partial<SiteContent> | null | undefined): SiteContent {
+  if (!serverData) return getSiteContent();
+  const merged: SiteContent = {
+    ...DEFAULT_SITE_CONTENT,
+    ...serverData,
+    hero: { ...DEFAULT_SITE_CONTENT.hero, ...(serverData.hero || {}) },
+    contact: { ...DEFAULT_SITE_CONTENT.contact, ...(serverData.contact || {}) },
+    social: { ...DEFAULT_SITE_CONTENT.social, ...(serverData.social || {}) },
+    features: Array.isArray(serverData.features) && serverData.features.length > 0 ? serverData.features : DEFAULT_SITE_CONTENT.features,
+    locationBanners: Array.isArray(serverData.locationBanners) && serverData.locationBanners.length > 0 ? serverData.locationBanners : DEFAULT_SITE_CONTENT.locationBanners,
+  };
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+    window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: merged }));
+  } catch (err) {
+    console.error('Failed to sync site content to localStorage', err);
+  }
+  return merged;
+}
+
 export function resetSiteContent(): SiteContent {
   try {
     localStorage.removeItem(STORAGE_KEY);
@@ -173,6 +95,7 @@ export function useSiteContent(): SiteContent {
     };
     window.addEventListener(EVENT_NAME, handler);
     window.addEventListener('storage', handler);
+
     return () => {
       window.removeEventListener(EVENT_NAME, handler);
       window.removeEventListener('storage', handler);

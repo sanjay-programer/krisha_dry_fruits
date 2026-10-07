@@ -1,5 +1,5 @@
-import { Leaf, Mail, Phone, MapPin, Facebook, Instagram, Twitter, MessageCircle } from 'lucide-react';
-import { useSiteContent } from '@/site-content';
+import { Leaf, Mail, Phone, MapPin, Facebook, Instagram, Twitter, MessageCircle, ExternalLink } from 'lucide-react';
+import { useSiteContent, getStoreGoogleMapsUrl } from '@/site-content';
 
 interface FooterProps {
   onNavigate: (page: string) => void;
@@ -8,6 +8,7 @@ interface FooterProps {
 export default function Footer({ onNavigate }: FooterProps) {
   const content = useSiteContent();
   const { contact, social, footerBio } = content;
+  const mapsUrl = getStoreGoogleMapsUrl(contact);
 
   return (
     <footer className="bg-brand-950 text-cream-200 border-t border-brand-900">
@@ -144,22 +145,41 @@ export default function Footer({ onNavigate }: FooterProps) {
             </ul>
           </div>
 
-          {/* Contact Details */}
+          {/* Contact Details & 1-Click Store Location */}
           <div>
             <h3 className="font-serif text-sm sm:text-base font-bold text-cream-50 uppercase tracking-wider mb-4">
-              Direct Contact
+              Direct Contact & Store
             </h3>
-            <ul className="space-y-3 text-xs sm:text-sm text-cream-300/80">
-              <li className="flex items-start gap-2.5">
-                <MapPin className="w-4 h-4 mt-0.5 shrink-0 text-brand-400" />
-                <span>{contact.address}</span>
+            <ul className="space-y-3.5 text-xs sm:text-sm text-cream-300/80">
+              <li className="flex items-start gap-2.5 group">
+                <MapPin className="w-4 h-4 mt-0.5 shrink-0 text-amber-400" />
+                <div>
+                  <div className="font-semibold text-cream-100">{contact.shopName || 'Flagship Store'}</div>
+                  <p className="text-cream-300/85 mt-0.5 leading-relaxed">{contact.address}</p>
+                  {contact.landmark && (
+                    <p className="text-[11px] text-cream-400/80 mt-0.5">
+                      Near: {contact.landmark}
+                    </p>
+                  )}
+                  <a
+                    href={mapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11.5px] text-amber-300 hover:text-amber-200 font-bold mt-1.5 transition-colors underline underline-offset-4"
+                  >
+                    <span>Open in Google Maps & Get Directions</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
               </li>
+
               <li className="flex items-center gap-2.5">
                 <Phone className="w-4 h-4 shrink-0 text-brand-400" />
                 <a href={`tel:${contact.phone}`} className="hover:text-cream-50 transition-colors">
                   {contact.phone}
                 </a>
               </li>
+
               <li className="flex items-center gap-2.5">
                 <Mail className="w-4 h-4 shrink-0 text-brand-400" />
                 <a href={`mailto:${contact.email}`} className="hover:text-cream-50 transition-colors">

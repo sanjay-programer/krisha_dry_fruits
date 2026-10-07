@@ -1,5 +1,5 @@
 import { ArrowRight, ChevronRight, ChevronLeft, MapPin } from 'lucide-react';
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState } from 'react';
 import type { Product } from '@/types';
 import { useSiteContent } from '@/site-content';
 import { formatPrice } from '@/data';
@@ -139,7 +139,7 @@ export default function GradeSelectorSection({
   };
 
   // Swipe gesture handling
-  const minSwipeDistance = 50;
+  const minSwipeDistance = 40;
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchEnd(null);
@@ -266,7 +266,7 @@ export default function GradeSelectorSection({
         </div>
 
         {/* Location-wise Cashew Section Header */}
-        <div className="mt-8 sm:mt-11">
+        <div className="mt-8 sm:mt-12">
           <div className="flex items-center justify-between mb-3 px-1">
             <div className="flex items-center gap-2">
               <MapPin className="w-4 h-4 text-forest-600" />
@@ -276,72 +276,138 @@ export default function GradeSelectorSection({
             </div>
 
             {totalBanners > 1 && (
-              <span className="text-xs font-semibold text-brand-500">
-                {activeSlide + 1} of {totalBanners} · Swipe to browse
+              <span className="text-xs font-semibold text-brand-500 hidden sm:inline-block">
+                {activeSlide + 1} of {totalBanners} • Swipe to browse
               </span>
             )}
           </div>
 
-          {/* Big, Full-Width Swipeable Location Banner Card */}
+          {/* Big, Full-Width Responsive Swipeable Location Banner Card */}
           <div
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
             onClick={handleBannerClick}
-            className="relative rounded-3xl overflow-hidden cursor-pointer group shadow-luxury border border-brand-200/60 select-none transition-all"
+            className="relative rounded-3xl overflow-hidden cursor-pointer group shadow-luxury border border-brand-200/70 select-none transition-all"
           >
-            <div className="relative h-44 sm:h-56 md:h-60 lg:h-64 overflow-hidden">
+            <div className="relative min-h-[280px] sm:min-h-0 sm:h-56 md:h-60 lg:h-68 overflow-hidden">
               <img
                 src={currentBanner.image || '/hero_cashew_bowl.jpg'}
                 alt={currentBanner.title}
-                className="w-full h-full object-cover object-[center_40%] transition-transform duration-700 group-hover:scale-105 filter brightness-95"
+                className="w-full h-full object-cover object-[center_40%] transition-transform duration-700 group-hover:scale-105 filter brightness-[0.88]"
                 onError={(e) => {
                   (e.currentTarget as HTMLImageElement).src = '/hero_cashew_bowl.jpg';
                 }}
               />
 
-              {/* Dark Warm Translucent Scrim for high contrast text */}
-              <div className="absolute inset-0 bg-gradient-to-r from-brand-950/85 via-brand-950/50 to-transparent" />
-              <div className="absolute inset-0 bg-gradient-to-t from-brand-950/60 via-transparent to-transparent sm:hidden" />
+              {/* High Contrast Scrim Gradients (optimized separately for mobile & desktop) */}
+              <div className="absolute inset-0 bg-gradient-to-t from-brand-950 via-brand-950/75 to-brand-950/40 sm:hidden" />
+              <div className="hidden sm:block absolute inset-0 bg-gradient-to-r from-brand-950/95 via-brand-950/65 to-transparent" />
 
-              {/* Content overlay */}
-              <div className="absolute inset-0 flex items-center justify-between px-6 sm:px-10 lg:px-14">
-                <div className="max-w-[75%] sm:max-w-xl pr-4">
-                  {/* Origin Tag */}
-                  <div className="flex items-center gap-2 mb-1.5 sm:mb-2 flex-wrap">
-                    <span className="text-[10px] sm:text-xs uppercase tracking-[0.2em] font-bold text-cream-200/90 drop-shadow-sm">
+              {/* MOBILE VIEW: Clean vertical stack with ample breathing room */}
+              <div className="sm:hidden absolute inset-0 flex flex-col justify-between p-5 z-10">
+                {/* Mobile Top Row: Badges & Slide Indicator */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[9.5px] uppercase tracking-[0.2em] font-bold text-cream-200 bg-brand-900/60 backdrop-blur-md px-2.5 py-0.5 rounded-full border border-white/15">
                       {currentBanner.tag}
                     </span>
                     {currentBanner.locationKey && (
-                      <span className="text-[9.5px] font-semibold bg-white/20 backdrop-blur-sm text-cream-100 px-2.5 py-0.5 rounded-full border border-white/20">
-                        📍 {currentBanner.locationKey}
+                      <span className="text-[9.5px] font-semibold bg-forest-900/80 text-forest-200 px-2.5 py-0.5 rounded-full border border-forest-500/30 flex items-center gap-1">
+                        <span>📍</span>
+                        <span>{currentBanner.locationKey}</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {totalBanners > 1 && (
+                    <span className="text-[10px] font-bold text-cream-200/90 bg-white/15 px-2 py-0.5 rounded-full backdrop-blur-sm">
+                      {activeSlide + 1}/{totalBanners}
+                    </span>
+                  )}
+                </div>
+
+                {/* Mobile Middle: Title & Subtitle */}
+                <div className="my-auto py-2">
+                  <h3 className="font-serif text-xl font-bold text-cream-50 leading-tight drop-shadow-md">
+                    {currentBanner.title}
+                  </h3>
+                  {currentBanner.subtitle && (
+                    <p className="text-xs text-cream-200/90 line-clamp-2 leading-relaxed mt-1.5 drop-shadow-sm">
+                      {currentBanner.subtitle}
+                    </p>
+                  )}
+                </div>
+
+                {/* Mobile Bottom: Action Button & Compact Controls */}
+                <div className="flex items-center justify-between gap-3 pt-1 border-t border-white/10">
+                  <div className="inline-flex items-center gap-2 rounded-full bg-white text-brand-950 px-4 py-2 text-xs font-bold shadow-lg transition-transform active:scale-95">
+                    <span>{currentBanner.linkText || 'Explore Cashews'}</span>
+                    <ArrowRight className="w-3.5 h-3.5 text-brand-600" />
+                  </div>
+
+                  {totalBanners > 1 && (
+                    <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); prevSlide(); }}
+                        className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/40 text-cream-50 flex items-center justify-center backdrop-blur-md transition-colors"
+                        aria-label="Previous Banner"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); nextSlide(); }}
+                        className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/40 text-cream-50 flex items-center justify-center backdrop-blur-md transition-colors"
+                        aria-label="Next Banner"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* DESKTOP VIEW: Spacious horizontal banner */}
+              <div className="hidden sm:flex absolute inset-0 items-center justify-between px-8 md:px-12 lg:px-14 z-10">
+                <div className="max-w-[70%] lg:max-w-xl pr-6">
+                  {/* Origin Tag */}
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <span className="text-[11px] uppercase tracking-[0.2em] font-bold text-cream-200/90 drop-shadow-sm">
+                      {currentBanner.tag}
+                    </span>
+                    {currentBanner.locationKey && (
+                      <span className="text-[10px] font-semibold bg-white/20 backdrop-blur-sm text-cream-100 px-2.5 py-0.5 rounded-full border border-white/20 flex items-center gap-1">
+                        <span>📍</span>
+                        <span>{currentBanner.locationKey}</span>
                       </span>
                     )}
                   </div>
 
                   {/* Title */}
-                  <h3 className="font-serif text-lg sm:text-2xl lg:text-3xl font-bold text-cream-50 leading-tight mb-1 sm:mb-2">
+                  <h3 className="font-serif text-2xl lg:text-3xl font-bold text-cream-50 leading-tight mb-2 drop-shadow-md">
                     {currentBanner.title}
                   </h3>
 
                   {/* Subtitle */}
                   {currentBanner.subtitle && (
-                    <p className="text-xs sm:text-sm text-cream-200/85 line-clamp-2 leading-relaxed">
+                    <p className="text-xs sm:text-sm text-cream-200/90 line-clamp-2 leading-relaxed">
                       {currentBanner.subtitle}
                     </p>
                   )}
                 </div>
 
                 {/* Pill Action Button */}
-                <div className="shrink-0 z-10">
-                  <div className="inline-flex items-center gap-2 rounded-full bg-white/25 hover:bg-white text-cream-50 hover:text-brand-950 backdrop-blur-md px-4 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm font-semibold transition-all shadow-md group-hover:bg-white group-hover:text-brand-950">
+                <div className="shrink-0">
+                  <div className="inline-flex items-center gap-2 rounded-full bg-white/25 hover:bg-white text-cream-50 hover:text-brand-950 backdrop-blur-md px-6 py-3 text-xs sm:text-sm font-semibold transition-all shadow-md group-hover:bg-white group-hover:text-brand-950">
                     <span>{currentBanner.linkText || 'Explore Cashews'}</span>
-                    <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 transition-transform group-hover:translate-x-1" />
+                    <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                   </div>
                 </div>
               </div>
 
-              {/* Prev / Next Slider Arrows */}
+              {/* Desktop Prev / Next Slider Arrows */}
               {totalBanners > 1 && (
                 <>
                   <button
@@ -350,10 +416,10 @@ export default function GradeSelectorSection({
                       e.stopPropagation();
                       prevSlide();
                     }}
-                    className="absolute left-3 sm:left-5 top-1/2 -translate-y-1/2 z-20 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-brand-950/40 hover:bg-brand-950/80 text-white backdrop-blur-md flex items-center justify-center border border-white/20 transition-all shadow-md hover:scale-105"
+                    className="hidden sm:flex absolute left-4 lg:left-6 top-1/2 -translate-y-1/2 z-20 w-9 h-9 lg:w-10 lg:h-10 rounded-full bg-brand-950/50 hover:bg-brand-950/85 text-white backdrop-blur-md items-center justify-center border border-white/20 transition-all shadow-md hover:scale-105"
                     aria-label="Previous Location Banner"
                   >
-                    <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                    <ChevronLeft className="w-5 h-5" />
                   </button>
 
                   <button
@@ -362,14 +428,14 @@ export default function GradeSelectorSection({
                       e.stopPropagation();
                       nextSlide();
                     }}
-                    className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 z-20 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-brand-950/40 hover:bg-brand-950/80 text-white backdrop-blur-md flex items-center justify-center border border-white/20 transition-all shadow-md hover:scale-105"
+                    className="hidden sm:flex absolute right-4 lg:right-6 top-1/2 -translate-y-1/2 z-20 w-9 h-9 lg:w-10 lg:h-10 rounded-full bg-brand-950/50 hover:bg-brand-950/85 text-white backdrop-blur-md items-center justify-center border border-white/20 transition-all shadow-md hover:scale-105"
                     aria-label="Next Location Banner"
                   >
-                    <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                    <ChevronRight className="w-5 h-5" />
                   </button>
 
                   {/* Indicator Dots */}
-                  <div className="absolute bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5">
+                  <div className="hidden sm:flex absolute bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 z-20 items-center gap-1.5">
                     {locationBanners.map((_, i) => (
                       <span
                         key={i}
@@ -378,7 +444,7 @@ export default function GradeSelectorSection({
                           setActiveSlide(i);
                         }}
                         className={`h-1.5 rounded-full transition-all cursor-pointer ${
-                          i === activeSlide ? 'w-6 bg-cream-50 shadow-sm' : 'w-1.5 bg-cream-50/40'
+                          i === activeSlide ? 'w-6 bg-cream-50 shadow-sm' : 'w-1.5 bg-cream-50/40 hover:bg-cream-50/70'
                         }`}
                       />
                     ))}
