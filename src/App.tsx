@@ -28,6 +28,11 @@ type Page = 'home' | 'products' | 'grades' | 'about' | 'contact' | 'product' | '
 
 function getInitialPage(): Page {
   if (typeof window === 'undefined') return 'home';
+  try {
+    if (window.sessionStorage?.getItem('kdf_auth_return_product_id')) {
+      return 'product';
+    }
+  } catch {}
   const p = window.location.pathname.replace(/^\//, '').split('?')[0] as Page;
   const validPages: Page[] = ['home', 'products', 'grades', 'about', 'contact', 'product', 'checkout', 'confirmation', 'myorders'];
   return validPages.includes(p) ? p : 'home';
@@ -100,12 +105,28 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
+  // If returning from guest sign-in, redirect immediately to the active product page
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined' || !window.sessionStorage) return;
+      const pendingProdId = window.sessionStorage.getItem('kdf_auth_return_product_id');
+      const returnUrl = window.sessionStorage.getItem('kdf_auth_return_url');
+      if (pendingProdId && page !== 'product') {
+        setPage('product');
+        window.history.replaceState({ page: 'product', productId: pendingProdId }, '', returnUrl || `/product?id=${pendingProdId}`);
+      }
+    } catch {}
+  }, [page]);
+
   // Recover selectedProduct if page is 'product' on mount or when products list changes
   useEffect(() => {
     if (page === 'product' && products.length > 0) {
       if (!selectedProduct) {
         const searchParams = new URLSearchParams(window.location.search);
-        const prodId = searchParams.get('id') || window.history.state?.productId;
+        let prodId = searchParams.get('id') || window.history.state?.productId;
+        if (!prodId && typeof window !== 'undefined' && window.sessionStorage) {
+          prodId = window.sessionStorage.getItem('kdf_auth_return_product_id') || undefined;
+        }
         const gradeParam = searchParams.get('grade');
         let found: Product | undefined;
         if (prodId) {
@@ -115,6 +136,10 @@ function App() {
         }
         if (found) {
           setSelectedProduct(found);
+          try {
+            window.sessionStorage?.removeItem('kdf_auth_return_product_id');
+            window.sessionStorage?.removeItem('kdf_auth_return_url');
+          } catch {}
         } else {
           setSelectedProduct(products[0]);
         }

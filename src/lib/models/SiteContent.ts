@@ -8,6 +8,7 @@ export interface ISiteContentDoc extends Document {
   features: Array<Record<string, any>>;
   locationBanners: Array<Record<string, any>>;
   contact: Record<string, any>;
+  delivery?: Record<string, any>;
   social: Record<string, any>;
   footerBio: string;
   adminEmails?: string[];
@@ -24,6 +25,7 @@ const SiteContentSchema = new Schema(
     features: [{ type: Schema.Types.Mixed }],
     locationBanners: [{ type: Schema.Types.Mixed }],
     contact: { type: Schema.Types.Mixed, default: {} },
+    delivery: { type: Schema.Types.Mixed, default: {} },
     social: { type: Schema.Types.Mixed, default: {} },
     footerBio: { type: String, default: '' },
     adminEmails: [{ type: String }],

@@ -2,6 +2,7 @@ import { X, Plus, Minus, Trash2, ShoppingBag, ArrowRight, ShieldCheck, Lock, Log
 import { useCart } from '@/cart-context';
 import { formatPrice } from '@/data';
 import { useUser, useClerk } from '@/auth';
+import { useSiteContent } from '@/site-content';
 
 interface CartDrawerProps {
   open: boolean;
@@ -13,12 +14,14 @@ export default function CartDrawer({ open, onClose, onCheckout }: CartDrawerProp
   const { items, removeItem, updateCount, subtotal, totalItems } = useCart();
   const { isSignedIn } = useUser();
   const clerk = useClerk();
+  const siteContent = useSiteContent();
 
-  const FREE_SHIPPING_THRESHOLD = 2000;
-  const shipping = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : 80;
+  const FREE_SHIPPING_THRESHOLD = siteContent.delivery?.freeDeliveryThreshold ?? 2000;
+  const flatRate = siteContent.delivery?.flatRate ?? 80;
+  const shipping = FREE_SHIPPING_THRESHOLD > 0 && subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : flatRate;
   const total = subtotal + shipping;
-  const progressPercent = Math.min(100, Math.round((subtotal / FREE_SHIPPING_THRESHOLD) * 100));
-  const remainingForFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
+  const progressPercent = FREE_SHIPPING_THRESHOLD > 0 ? Math.min(100, Math.round((subtotal / FREE_SHIPPING_THRESHOLD) * 100)) : 100;
+  const remainingForFreeShipping = FREE_SHIPPING_THRESHOLD > 0 ? Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal) : 0;
 
   return (
     <>

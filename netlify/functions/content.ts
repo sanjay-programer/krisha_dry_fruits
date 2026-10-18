@@ -205,6 +205,7 @@ export const handler: Handler = async (event) => {
       features: Array.isArray(doc.features) && doc.features.length > 0 ? doc.features : DEFAULT_SITE_CONTENT.features,
       locationBanners: Array.isArray(doc.locationBanners) ? doc.locationBanners : [],
       contact: { ...DEFAULT_SITE_CONTENT.contact, ...(doc.contact || {}) },
+      delivery: { ...DEFAULT_SITE_CONTENT.delivery, ...(doc.delivery || {}) },
       social: { ...DEFAULT_SITE_CONTENT.social, ...(doc.social || {}) },
       footerBio: doc.footerBio ?? DEFAULT_SITE_CONTENT.footerBio,
       adminEmails: Array.isArray(doc.adminEmails) ? doc.adminEmails : [],

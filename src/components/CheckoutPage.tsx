@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ArrowLeft, Check, Truck, MapPin, Locate, ChevronRight, Search, Loader2, Lock, ShieldCheck } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -6,6 +6,7 @@ import 'leaflet/dist/leaflet.css';
 import { useCart } from '@/cart-context';
 import { useUser, useClerk } from '@/auth';
 import { formatPrice, generateOrderId, getEstimatedDelivery } from '@/data';
+import { useSiteContent, calculateDeliveryFee } from '@/site-content';
 import type { CustomerInfo, OrderDetails } from '@/types';
 
 // Custom Leaflet marker icon
@@ -112,7 +113,33 @@ export default function CheckoutPage({ onBack, onPlaceOrder }: CheckoutPageProps
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const shipping = subtotal >= 2000 ? 0 : 80;
+  const siteContent = useSiteContent();
+
+  const deliveryResult = useMemo(() => {
+    const shopLat = siteContent.contact?.latitude;
+    const shopLng = siteContent.contact?.longitude;
+    const customerLat = markerPos ? markerPos[0] : customer.lat;
+    const customerLng = markerPos ? markerPos[1] : customer.lng;
+
+    return calculateDeliveryFee({
+      subtotal,
+      customerLat,
+      customerLng,
+      shopLat,
+      shopLng,
+      settings: siteContent.delivery,
+    });
+  }, [
+    subtotal,
+    markerPos,
+    customer.lat,
+    customer.lng,
+    siteContent.contact?.latitude,
+    siteContent.contact?.longitude,
+    siteContent.delivery,
+  ]);
+
+  const shipping = deliveryResult.fee;
   const total = subtotal + shipping;
 
   // Autofill from Google / Clerk on mount
@@ -328,6 +355,8 @@ export default function CheckoutPage({ onBack, onPlaceOrder }: CheckoutPageProps
       shipping,
       total,
       customer: orderCustomer,
+      deliveryDistanceKm: deliveryResult.distanceKm ?? undefined,
+      deliveryExplanation: deliveryResult.explanation,
       paymentMethod: 'cod',
       placedAt: new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }),
       estimatedDelivery: getEstimatedDelivery(),
@@ -491,8 +520,8 @@ export default function CheckoutPage({ onBack, onPlaceOrder }: CheckoutPageProps
 
             {/* GPS Pin Status Indicator */}
             {markerPos ? (
-              <div className="mb-4 p-3 rounded-xl bg-forest-50 border border-forest-200 flex items-center justify-between gap-2 text-xs text-forest-900">
-                <div className="flex items-center gap-2">
+              <div className="mb-4 p-3 rounded-xl bg-forest-50 border border-forest-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-forest-900">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Check className="w-4 h-4 text-forest-600 shrink-0" />
                   <div>
                     <span className="font-bold">Location Pinned: </span>
@@ -500,8 +529,14 @@ export default function CheckoutPage({ onBack, onPlaceOrder }: CheckoutPageProps
                       {markerPos[0].toFixed(5)}, {markerPos[1].toFixed(5)}
                     </span>
                   </div>
+                  {deliveryResult.distanceKm !== null && (
+                    <span className="inline-flex items-center gap-1 font-bold text-brand-900 bg-brand-100 px-2 py-0.5 rounded-md border border-brand-200">
+                      <Truck className="w-3 h-3 text-brand-700" />
+                      <span>{deliveryResult.distanceKm} km from store</span>
+                    </span>
+                  )}
                 </div>
-                <span className="text-[11px] font-bold text-forest-700 bg-white px-2 py-0.5 rounded-md border border-forest-200">
+                <span className="text-[11px] font-bold text-forest-700 bg-white px-2 py-0.5 rounded-md border border-forest-200 shrink-0">
                   ✓ Verified for Google Maps
                 </span>
               </div>
@@ -692,12 +727,27 @@ export default function CheckoutPage({ onBack, onPlaceOrder }: CheckoutPageProps
                 <span className="text-brand-600">Subtotal</span>
                 <span className="font-medium text-brand-900">{formatPrice(subtotal)}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-brand-600">Shipping</span>
-                <span className="font-medium text-brand-900">
-                  {shipping === 0 ? <span className="text-forest-600">Free</span> : formatPrice(shipping)}
-                </span>
+              <div className="flex justify-between text-sm items-start">
+                <div>
+                  <span className="text-brand-600 block">Shipping</span>
+                  {deliveryResult.distanceKm !== null && (
+                    <span className="text-[10px] text-brand-500 font-semibold flex items-center gap-1 mt-0.5">
+                      <span>📍</span>
+                      <span>{deliveryResult.distanceKm} km from store</span>
+                    </span>
+                  )}
+                </div>
+                <div className="text-right">
+                  <span className="font-semibold text-brand-900">
+                    {shipping === 0 ? <span className="text-forest-600 font-bold">FREE</span> : formatPrice(shipping)}
+                  </span>
+                </div>
               </div>
+              {deliveryResult.explanation && (
+                <div className="p-2 rounded-lg bg-cream-100/80 border border-brand-200/60 text-[10.5px] text-brand-700 leading-snug">
+                  {deliveryResult.explanation}
+                </div>
+              )}
               <div className="flex justify-between pt-2 border-t border-brand-200">
                 <span className="font-serif text-base font-semibold text-brand-900">Total</span>
                 <span className="font-serif text-xl font-bold text-brand-900">{formatPrice(total)}</span>

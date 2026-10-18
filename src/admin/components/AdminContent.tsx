@@ -37,6 +37,9 @@ import {
   Pencil,
   X,
   ArrowRight,
+  Calculator,
+  Sliders,
+  Info,
 } from 'lucide-react';
 import { adminApi, api } from '@/api';
 import {
@@ -47,7 +50,10 @@ import {
   type LocationBanner,
   type HeroSlide,
   type FeatureItem,
+  type DeliverySettings,
   DEFAULT_SITE_CONTENT,
+  DEFAULT_DELIVERY_SETTINGS,
+  calculateDeliveryFee,
   getStoreGoogleMapsUrl,
   getStoreEmbedMapUrl,
   extractCoordinatesFromMapsUrl,
@@ -67,10 +73,14 @@ const ICON_OPTIONS: Array<{ label: string; value: FeatureItem['iconName']; icon:
 export default function AdminContent() {
   const currentContent = useSiteContent();
   const [content, setContent] = useState<SiteContent>(currentContent);
-  const [activeTab, setActiveTab] = useState<'hero' | 'features' | 'locations' | 'contact' | 'social'>('hero');
+  const [activeTab, setActiveTab] = useState<'hero' | 'features' | 'locations' | 'contact' | 'delivery' | 'social'>('hero');
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+
+  // Delivery KM Pricing Sandbox Simulation State
+  const [simDistance, setSimDistance] = useState<number>(8);
+  const [simSubtotal, setSimSubtotal] = useState<number>(1500);
 
   // GPS Auto-detect, Place Search, and Pinning State
   const [detectingGps, setDetectingGps] = useState(false);
@@ -135,6 +145,7 @@ export default function AdminContent() {
               hero: { ...prev.hero, ...(remote.hero || {}) },
               heroSlides: resolvedHeroSlides,
               contact: { ...prev.contact, ...(remote.contact || {}) },
+              delivery: { ...DEFAULT_SITE_CONTENT.delivery, ...(prev.delivery || {}), ...(remote.delivery || {}) },
               social: { ...prev.social, ...(remote.social || {}) },
               features: Array.isArray(remote.features) && remote.features.length > 0 ? remote.features : prev.features,
               locationBanners: Array.isArray(remote.locationBanners) ? remote.locationBanners : prev.locationBanners,
@@ -448,6 +459,16 @@ export default function AdminContent() {
     setContent((prev) => ({
       ...prev,
       contact: { ...prev.contact, [field]: value },
+    }));
+  };
+
+  const updateDelivery = (field: keyof DeliverySettings, value: any) => {
+    setContent((prev) => ({
+      ...prev,
+      delivery: {
+        ...(prev.delivery || DEFAULT_SITE_CONTENT.delivery || DEFAULT_DELIVERY_SETTINGS),
+        [field]: value,
+      },
     }));
   };
 
@@ -774,6 +795,7 @@ export default function AdminContent() {
           { id: 'features', label: '4 Trust Features', icon: Layers },
           { id: 'locations', label: 'Location Cashew Banners', icon: MapPin },
           { id: 'contact', label: 'Store Location & Contact', icon: MapPin },
+          { id: 'delivery', label: 'Delivery & KM Pricing', icon: Truck },
           { id: 'social', label: 'Footer & Social Handles', icon: Share2 },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -1811,6 +1833,562 @@ export default function AdminContent() {
 
           <div className="flex justify-end pt-2 border-t border-brand-100">
             {renderSaveButton('Save Store Location & Contact Info')}
+          </div>
+        </div>
+      )}
+
+      {/* TAB: DELIVERY & KM PRICING */}
+      {activeTab === 'delivery' && (
+        <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-luxury border border-brand-200/60 space-y-8">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-brand-100">
+            <div>
+              <h2 className="font-serif text-xl font-bold text-brand-950 flex items-center gap-2">
+                <Truck className="w-5 h-5 text-brand-700" />
+                <span>Delivery & Distance-Based (KM) Pricing</span>
+              </h2>
+              <p className="text-xs sm:text-sm text-brand-600 mt-1 max-w-2xl">
+                Configure whether delivery fees are automatically calculated based on the customer's distance in kilometers from your shop location, or charged at a flat rate.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {renderSaveButton('Publish Delivery Pricing')}
+            </div>
+          </div>
+
+          {/* Shop Origin Coordinates Status */}
+          {(() => {
+            const shopLat = content.contact?.latitude;
+            const shopLng = content.contact?.longitude;
+            const hasCoords = Boolean(shopLat && shopLng && !isNaN(Number(shopLat)) && !isNaN(Number(shopLng)));
+
+            return (
+              <div
+                className={`p-4 rounded-2xl border transition-all ${
+                  hasCoords
+                    ? 'bg-emerald-50/80 border-emerald-200 text-emerald-950'
+                    : 'bg-amber-50/80 border-amber-200 text-amber-950'
+                }`}
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                        hasCoords ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                      }`}
+                    >
+                      <MapPin className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-bold flex items-center gap-2">
+                        <span>{hasCoords ? 'Store Origin Pinned & Active' : 'Store Coordinates Missing'}</span>
+                        <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-white/70 border border-current">
+                          {hasCoords ? 'GPS Live' : 'Action Needed'}
+                        </span>
+                      </h4>
+                      <p className="text-xs mt-0.5 opacity-90">
+                        {hasCoords
+                          ? `Store Origin: ${content.contact?.shopName || 'Krisha Dry Fruits'} (${shopLat}, ${shopLng}). Customer distance is measured accurately from this pin.`
+                          : 'You have not yet pinned your store GPS coordinates in the Store Location tab. Distance calculations will fall back to flat rate until coordinates are saved.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('contact')}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-white shadow-xs border border-brand-200 text-brand-900 hover:bg-cream-50 transition-colors shrink-0 cursor-pointer"
+                  >
+                    <span>{hasCoords ? 'Change Store Pin (Location Tab)' : 'Set Store Pin Now'}</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Pricing Model Selector */}
+          <div className="space-y-3">
+            <label className="text-xs font-bold text-brand-900 uppercase tracking-wider block">
+              Choose Delivery Pricing Model
+            </label>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Option 1: Distance Based (KM) */}
+              <div
+                onClick={() => updateDelivery('pricingModel', 'km')}
+                className={`p-5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+                  (content.delivery?.pricingModel ?? 'km') === 'km'
+                    ? 'border-brand-700 bg-brand-50/60 shadow-sm'
+                    : 'border-brand-200/80 bg-white hover:border-brand-300'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-brand-100 flex items-center justify-center text-brand-800">
+                      <Truck className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="font-serif text-sm font-bold text-brand-950">
+                        Distance-Based (KM)
+                      </h3>
+                      <span className="text-[10px] font-bold text-forest-700 bg-forest-50 px-2 py-0.5 rounded-full border border-forest-200">
+                        Recommended
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="radio"
+                    name="pricingModel"
+                    checked={(content.delivery?.pricingModel ?? 'km') === 'km'}
+                    onChange={() => updateDelivery('pricingModel', 'km')}
+                    className="mt-1 text-brand-700 focus:ring-brand-700"
+                  />
+                </div>
+                <p className="text-xs text-brand-600 leading-relaxed">
+                  Delivery price scales based on actual distance from your shop pin to the customer's delivery pin on the map. Includes base km, extra km rate, and local radius limit.
+                </p>
+              </div>
+
+              {/* Option 2: Fixed Flat Rate */}
+              <div
+                onClick={() => updateDelivery('pricingModel', 'flat')}
+                className={`p-5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+                  (content.delivery?.pricingModel ?? 'km') === 'flat'
+                    ? 'border-brand-700 bg-brand-50/60 shadow-sm'
+                    : 'border-brand-200/80 bg-white hover:border-brand-300'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-brand-100 flex items-center justify-center text-brand-800">
+                      <Sliders className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="font-serif text-sm font-bold text-brand-950">
+                        Fixed Flat Rate
+                      </h3>
+                      <span className="text-[10px] text-brand-500 font-medium">
+                        Standard Pan-India
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="radio"
+                    name="pricingModel"
+                    checked={(content.delivery?.pricingModel ?? 'km') === 'flat'}
+                    onChange={() => updateDelivery('pricingModel', 'flat')}
+                    className="mt-1 text-brand-700 focus:ring-brand-700"
+                  />
+                </div>
+                <p className="text-xs text-brand-600 leading-relaxed">
+                  Charges the same fixed shipping fee regardless of how far the customer is located. Useful for standard national courier operations.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Preset Buttons */}
+          <div className="p-4 rounded-2xl bg-cream-50/80 border border-brand-200/70 space-y-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-brand-500 block">
+              Quick Preset Configurations
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setContent((prev) => ({
+                    ...prev,
+                    delivery: {
+                      enabled: true,
+                      pricingModel: 'km',
+                      baseKm: 3,
+                      basePrice: 40,
+                      pricePerKm: 8,
+                      freeDeliveryThreshold: 1500,
+                      maxKm: 25,
+                      flatOutsideRate: 90,
+                      flatRate: 70,
+                    },
+                  }));
+                  showToast('Applied "Hyperlocal City" delivery preset.', 'info');
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-white border border-brand-200 text-xs font-semibold text-brand-800 hover:bg-cream-100 transition-colors shadow-xs"
+              >
+                🏙️ Hyperlocal City (Base 3km @ ₹40, +₹8/km)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setContent((prev) => ({
+                    ...prev,
+                    delivery: {
+                      enabled: true,
+                      pricingModel: 'km',
+                      baseKm: 5,
+                      basePrice: 50,
+                      pricePerKm: 10,
+                      freeDeliveryThreshold: 2000,
+                      maxKm: 50,
+                      flatOutsideRate: 100,
+                      flatRate: 80,
+                    },
+                  }));
+                  showToast('Applied "Standard Regional" delivery preset.', 'info');
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-white border border-brand-200 text-xs font-semibold text-brand-800 hover:bg-cream-100 transition-colors shadow-xs"
+              >
+                📍 Standard Regional (Base 5km @ ₹50, +₹10/km)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setContent((prev) => ({
+                    ...prev,
+                    delivery: {
+                      enabled: true,
+                      pricingModel: 'flat',
+                      baseKm: 5,
+                      basePrice: 50,
+                      pricePerKm: 10,
+                      freeDeliveryThreshold: 2000,
+                      maxKm: 50,
+                      flatOutsideRate: 100,
+                      flatRate: 80,
+                    },
+                  }));
+                  showToast('Applied "Flat Pan-India" delivery preset.', 'info');
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-white border border-brand-200 text-xs font-semibold text-brand-800 hover:bg-cream-100 transition-colors shadow-xs"
+              >
+                📦 Pan-India Flat (Flat ₹80 across India)
+              </button>
+            </div>
+          </div>
+
+          {/* Pricing Parameters Grid */}
+          <div className="space-y-4">
+            <h3 className="font-serif text-base font-bold text-brand-950 flex items-center gap-2">
+              <Sliders className="w-4 h-4 text-brand-700" />
+              <span>Pricing Parameters & Rules</span>
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {/* Base Distance (km) */}
+              <div className="bg-cream-50/50 p-4 rounded-2xl border border-brand-200/60">
+                <label className="text-xs font-bold text-brand-900 block mb-1">
+                  Base Distance Radius (KM)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={content.delivery?.baseKm ?? 5}
+                    onChange={(e) => updateDelivery('baseKm', Math.max(0, parseFloat(e.target.value) || 0))}
+                    className="input-field text-sm font-semibold pr-12"
+                  />
+                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-brand-500 pointer-events-none">
+                    KM
+                  </span>
+                </div>
+                <p className="text-[11px] text-brand-500 mt-1.5 leading-snug">
+                  Deliveries within this initial radius are charged only the Base Price.
+                </p>
+              </div>
+
+              {/* Base Price (₹) */}
+              <div className="bg-cream-50/50 p-4 rounded-2xl border border-brand-200/60">
+                <label className="text-xs font-bold text-brand-900 block mb-1">
+                  Base Delivery Price (₹)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-brand-500 pointer-events-none">
+                    ₹
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="5"
+                    value={content.delivery?.basePrice ?? 50}
+                    onChange={(e) => updateDelivery('basePrice', Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    className="input-field text-sm font-semibold pl-8"
+                  />
+                </div>
+                <p className="text-[11px] text-brand-500 mt-1.5 leading-snug">
+                  Delivery fee charged for any order up to the base distance.
+                </p>
+              </div>
+
+              {/* Price Per Extra KM (₹/km) */}
+              <div className="bg-cream-50/50 p-4 rounded-2xl border border-brand-200/60">
+                <label className="text-xs font-bold text-brand-900 block mb-1">
+                  Price Per Extra KM (₹/KM)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-brand-500 pointer-events-none">
+                    ₹
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={content.delivery?.pricePerKm ?? 10}
+                    onChange={(e) => updateDelivery('pricePerKm', Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    className="input-field text-sm font-semibold pl-8 pr-12"
+                  />
+                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-brand-500 pointer-events-none">
+                    / KM
+                  </span>
+                </div>
+                <p className="text-[11px] text-brand-500 mt-1.5 leading-snug">
+                  Added for every single kilometer beyond the base distance.
+                </p>
+              </div>
+
+              {/* Free Delivery Threshold (₹) */}
+              <div className="bg-cream-50/50 p-4 rounded-2xl border border-brand-200/60">
+                <label className="text-xs font-bold text-brand-900 block mb-1">
+                  Free Delivery Threshold (₹)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-brand-500 pointer-events-none">
+                    ₹
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="100"
+                    value={content.delivery?.freeDeliveryThreshold ?? 2000}
+                    onChange={(e) => updateDelivery('freeDeliveryThreshold', Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    className="input-field text-sm font-semibold pl-8"
+                  />
+                </div>
+                <p className="text-[11px] text-brand-500 mt-1.5 leading-snug">
+                  Orders with subtotal equal or above this get 100% Free Shipping. (0 disables).
+                </p>
+              </div>
+
+              {/* Max Local Radius (km) */}
+              <div className="bg-cream-50/50 p-4 rounded-2xl border border-brand-200/60">
+                <label className="text-xs font-bold text-brand-900 block mb-1">
+                  Max Local Radius (KM)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    step="5"
+                    value={content.delivery?.maxKm ?? 50}
+                    onChange={(e) => updateDelivery('maxKm', Math.max(0, parseFloat(e.target.value) || 0))}
+                    className="input-field text-sm font-semibold pr-12"
+                  />
+                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-brand-500 pointer-events-none">
+                    KM
+                  </span>
+                </div>
+                <p className="text-[11px] text-brand-500 mt-1.5 leading-snug">
+                  Beyond this distance, the Flat Outside Rate automatically applies.
+                </p>
+              </div>
+
+              {/* Flat Outside Rate (₹) */}
+              <div className="bg-cream-50/50 p-4 rounded-2xl border border-brand-200/60">
+                <label className="text-xs font-bold text-brand-900 block mb-1">
+                  Outside Radius Courier Rate (₹)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-brand-500 pointer-events-none">
+                    ₹
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="5"
+                    value={content.delivery?.flatOutsideRate ?? 100}
+                    onChange={(e) => updateDelivery('flatOutsideRate', Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    className="input-field text-sm font-semibold pl-8"
+                  />
+                </div>
+                <p className="text-[11px] text-brand-500 mt-1.5 leading-snug">
+                  Fixed charge for distant orders outside the maximum local radius.
+                </p>
+              </div>
+
+              {/* Standard Flat Rate (₹) */}
+              <div className="bg-cream-50/50 p-4 rounded-2xl border border-brand-200/60">
+                <label className="text-xs font-bold text-brand-900 block mb-1">
+                  Standard Flat Rate (Fallback) (₹)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-brand-500 pointer-events-none">
+                    ₹
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="5"
+                    value={content.delivery?.flatRate ?? 80}
+                    onChange={(e) => updateDelivery('flatRate', Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    className="input-field text-sm font-semibold pl-8"
+                  />
+                </div>
+                <p className="text-[11px] text-brand-500 mt-1.5 leading-snug">
+                  Used if Flat Rate model is chosen or if GPS coordinates are unavailable.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Interactive Live Distance Simulator Sandbox */}
+          <div className="p-6 rounded-3xl bg-brand-950 text-cream-50 space-y-5 border border-brand-800 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-brand-800/80">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-400/20 text-amber-300 flex items-center justify-center">
+                  <Calculator className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-serif text-base font-bold text-cream-50">
+                    Live Distance Pricing Sandbox
+                  </h3>
+                  <p className="text-xs text-cream-300">
+                    Test how your delivery rates will behave for any distance and order value before publishing.
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-full bg-white/10 text-amber-300 border border-white/10">
+                Real-Time Simulation
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+              {/* Simulator Inputs */}
+              <div className="space-y-4">
+                <div>
+                  <div className="flex justify-between items-center text-xs mb-1.5">
+                    <span className="text-cream-200 font-bold">Customer Distance from Store:</span>
+                    <span className="font-mono text-amber-300 font-bold text-sm">{simDistance} KM</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="60"
+                    step="0.5"
+                    value={simDistance}
+                    onChange={(e) => setSimDistance(parseFloat(e.target.value))}
+                    className="w-full accent-amber-400 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-cream-400 mt-1">
+                    <span>1 KM</span>
+                    <span>15 KM</span>
+                    <span>30 KM</span>
+                    <span>45 KM</span>
+                    <span>60 KM</span>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center text-xs mb-1.5">
+                    <span className="text-cream-200 font-bold">Customer Order Subtotal:</span>
+                    <span className="font-mono text-amber-300 font-bold text-sm">₹{simSubtotal.toLocaleString('en-IN')}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="200"
+                    max="4000"
+                    step="100"
+                    value={simSubtotal}
+                    onChange={(e) => setSimSubtotal(parseInt(e.target.value, 10))}
+                    className="w-full accent-amber-400 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-cream-400 mt-1">
+                    <span>₹200</span>
+                    <span>₹1,000</span>
+                    <span>₹2,000</span>
+                    <span>₹3,000</span>
+                    <span>₹4,000</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Simulation Result Card */}
+              {(() => {
+                const simulatedResult = calculateDeliveryFee({
+                  subtotal: simSubtotal,
+                  customerLat: 15.2993, // Sample point
+                  customerLng: 74.1240,
+                  shopLat: 15.2993,
+                  shopLng: 74.1240 + simDistance / 111, // Approximately simDistance km away
+                  settings: content.delivery,
+                });
+
+                const cfg = { ...DEFAULT_DELIVERY_SETTINGS, ...(content.delivery || {}) };
+                const isOverFreeThreshold = cfg.freeDeliveryThreshold > 0 && simSubtotal >= cfg.freeDeliveryThreshold;
+                const extraKm = Math.max(0, Math.ceil(simDistance - cfg.baseKm));
+
+                return (
+                  <div className="p-5 rounded-2xl bg-white/5 border border-white/10 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs uppercase tracking-wider text-cream-300 font-bold">
+                        Calculated Delivery Charge:
+                      </span>
+                      {isOverFreeThreshold ? (
+                        <span className="text-xl font-serif font-bold text-emerald-400">
+                          FREE DELIVERY 🎉
+                        </span>
+                      ) : (
+                        <span className="text-2xl font-serif font-bold text-amber-300">
+                          ₹{simulatedResult.fee}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="text-xs text-cream-200 space-y-1.5 pt-2 border-t border-white/10">
+                      <div className="flex justify-between">
+                        <span className="text-cream-300">Pricing Model:</span>
+                        <span className="font-semibold capitalize text-cream-100">{cfg.pricingModel} rate</span>
+                      </div>
+                      {cfg.pricingModel === 'km' && (
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-cream-300">Base Zone (0 to {cfg.baseKm} km):</span>
+                            <span className="font-semibold text-cream-100">₹{cfg.basePrice}</span>
+                          </div>
+                          {simDistance > cfg.baseKm && simDistance <= (cfg.maxKm || 50) && (
+                            <div className="flex justify-between">
+                              <span className="text-cream-300">Extra {extraKm} km × ₹{cfg.pricePerKm}/km:</span>
+                              <span className="font-semibold text-cream-100">+₹{extraKm * cfg.pricePerKm}</span>
+                            </div>
+                          )}
+                          {cfg.maxKm && simDistance > cfg.maxKm && (
+                            <div className="flex justify-between text-amber-300">
+                              <span>Exceeds max {cfg.maxKm}km local radius:</span>
+                              <span className="font-semibold">Flat Courier ₹{cfg.flatOutsideRate}</span>
+                            </div>
+                          )}
+                        </>
+                      )}
+                      <div className="flex justify-between pt-1 border-t border-white/10 font-bold text-cream-100">
+                        <span>Total Customer Bill:</span>
+                        <span>₹{(simSubtotal + simulatedResult.fee).toLocaleString('en-IN')}</span>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-cream-400 italic">
+                      "{simulatedResult.explanation}"
+                    </p>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* Footer Save Row */}
+          <div className="flex justify-end pt-4 border-t border-brand-100">
+            {renderSaveButton('Save Delivery & KM Pricing')}
           </div>
         </div>
       )}

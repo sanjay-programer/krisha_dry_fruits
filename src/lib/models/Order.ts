@@ -39,6 +39,8 @@ export interface IOrder extends Document {
   notes?: string;
   placedAt: Date;
   estimatedDelivery: string;
+  deliveryDistanceKm?: number;
+  deliveryExplanation?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -85,6 +87,8 @@ const OrderSchema = new Schema<IOrder>(
     notes: String,
     placedAt: { type: Date, default: Date.now },
     estimatedDelivery: String,
+    deliveryDistanceKm: Number,
+    deliveryExplanation: String,
   },
   { timestamps: true }
 );

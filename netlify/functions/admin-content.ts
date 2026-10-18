@@ -248,6 +248,7 @@ export const handler: Handler = async (event) => {
         features: body.features,
         locationBanners: body.locationBanners,
         contact: body.contact,
+        delivery: body.delivery,
         social: body.social,
         footerBio: body.footerBio,
       };

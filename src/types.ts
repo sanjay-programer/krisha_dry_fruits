@@ -82,6 +82,8 @@ export interface OrderDetails {
   paymentMethod: string;
   placedAt: string;
   estimatedDelivery: string;
+  deliveryDistanceKm?: number;
+  deliveryExplanation?: string;
   status?: OrderStatus;
   trackingNumber?: string;
   notes?: string;

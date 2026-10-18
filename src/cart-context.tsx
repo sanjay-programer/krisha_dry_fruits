@@ -39,12 +39,50 @@ export function CartProvider({ children }: { children: ReactNode }) {
     const userStorageKey = user?.id ? `krisha_cart_items_${user.id}` : CART_STORAGE_KEY;
     try {
       const saved = localStorage.getItem(userStorageKey);
+      let currentItems: CartItem[] = [];
       if (saved) {
         const parsed = JSON.parse(saved);
-        setItems(Array.isArray(parsed) ? parsed : []);
-      } else {
-        setItems([]);
+        if (Array.isArray(parsed)) currentItems = parsed;
       }
+
+      // Check for any pending cart item queued by a guest prior to signing in
+      try {
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+          const rawPending = window.sessionStorage.getItem('kdf_pending_cart_item');
+          if (rawPending) {
+            const pending = JSON.parse(rawPending);
+            if (pending?.product && pending?.type && pending?.quantity && pending?.price) {
+              const id = `${pending.product.id}-${pending.type}-${pending.quantity}`;
+              const countToAdd = Math.max(1, Number(pending.count) || 1);
+              const existingIdx = currentItems.findIndex((it) => it.id === id);
+              if (existingIdx !== -1) {
+                currentItems[existingIdx] = {
+                  ...currentItems[existingIdx],
+                  count: currentItems[existingIdx].count + countToAdd,
+                };
+              } else {
+                currentItems.push({
+                  id,
+                  productId: pending.product.id,
+                  grade: pending.product.grade,
+                  type: pending.type,
+                  quantity: pending.quantity,
+                  price: pending.price.price,
+                  image: pending.image || pending.product.image,
+                  count: countToAdd,
+                });
+              }
+              // Save updated cart immediately to localStorage
+              localStorage.setItem(userStorageKey, JSON.stringify(currentItems));
+              window.sessionStorage.removeItem('kdf_pending_cart_item');
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to ingest pending guest cart item:', err);
+      }
+
+      setItems(currentItems);
     } catch {
       setItems([]);
     }

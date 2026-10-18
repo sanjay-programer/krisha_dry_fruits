@@ -101,9 +101,59 @@ export default function ProductDetail({
     setAdded(false);
   };
 
+  // Check if we just signed in with a pending item for this product
+  useEffect(() => {
+    if (!isSignedIn) return;
+    try {
+      if (typeof window === 'undefined' || !window.sessionStorage) return;
+      const raw = window.sessionStorage.getItem('kdf_pending_cart_item');
+      if (raw) {
+        const pending = JSON.parse(raw);
+        const prodKey = product._id || product.id;
+        const pendingKey = pending?.product?._id || pending?.product?.id;
+        if (prodKey && pendingKey && prodKey === pendingKey) {
+          if (pending.type) setSelectedType(pending.type);
+          if (pending.quantity) setSelectedQty(pending.quantity);
+          if (pending.count) setCount(pending.count);
+          setAdded(true);
+        }
+      }
+    } catch {}
+  }, [isSignedIn, product]);
+
+  const handleGuestSignInAndAdd = () => {
+    const prodId = (product as any)._id || product.id;
+    const returnPath = `/product?id=${prodId}`;
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        window.sessionStorage.setItem(
+          'kdf_pending_cart_item',
+          JSON.stringify({
+            product,
+            type: selectedType,
+            quantity: selectedQty,
+            price: currentPrice,
+            image: currentType?.image || product.image,
+            count,
+          })
+        );
+        window.sessionStorage.setItem('kdf_auth_return_url', returnPath);
+        window.sessionStorage.setItem('kdf_auth_return_product_id', prodId);
+      }
+    } catch (e) {
+      console.warn('Failed to save pending cart state:', e);
+    }
+
+    const redirectUrl = typeof window !== 'undefined' ? `${window.location.origin}${returnPath}` : returnPath;
+    clerk?.openSignIn?.({
+      fallbackRedirectUrl: redirectUrl,
+      signUpFallbackRedirectUrl: redirectUrl,
+    });
+  };
+
   const handleAddToCart = () => {
     if (!isSignedIn) {
-      clerk?.openSignIn?.({ fallbackRedirectUrl: window.location.href });
+      handleGuestSignInAndAdd();
       return;
     }
     if (!currentType || !currentPrice) return;
@@ -359,7 +409,7 @@ export default function ProductDetail({
             {!isSignedIn ? (
               <div className="space-y-2">
                 <button
-                  onClick={() => clerk?.openSignIn?.({ fallbackRedirectUrl: window.location.href })}
+                  onClick={handleGuestSignInAndAdd}
                   className="w-full btn-primary py-3.5 text-sm font-semibold tracking-wide flex items-center justify-center gap-2 shadow-md bg-amber-700 hover:bg-amber-800 text-cream-50"
                 >
                   <Lock className="w-4 h-4 text-amber-200" />
@@ -461,7 +511,7 @@ export default function ProductDetail({
 
           {!isSignedIn ? (
             <button
-              onClick={() => clerk?.openSignIn?.({ fallbackRedirectUrl: window.location.href })}
+              onClick={handleGuestSignInAndAdd}
               className="rounded-full bg-amber-700 hover:bg-amber-800 text-cream-50 py-3 px-6 text-xs sm:text-sm font-semibold flex items-center gap-1.5 shadow-md transition-colors"
             >
               <Lock className="w-4 h-4 text-amber-200" />

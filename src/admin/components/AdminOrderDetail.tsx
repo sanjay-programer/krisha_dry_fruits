@@ -301,12 +301,24 @@ export default function AdminOrderDetail({ orderId, onBack }: { orderId: string;
                 <span>Items Subtotal</span>
                 <span className="text-brand-950 font-semibold">{formatPrice(order.subtotal)}</span>
               </div>
-              <div className="flex justify-between text-brand-600 font-medium">
-                <span>Logistics / Shipping</span>
+              <div className="flex justify-between text-brand-600 font-medium items-start">
+                <div>
+                  <span>Logistics / Shipping</span>
+                  {typeof order.deliveryDistanceKm === 'number' && (
+                    <span className="block text-[11px] text-brand-500 font-semibold">
+                      📍 {order.deliveryDistanceKm} km from store
+                    </span>
+                  )}
+                </div>
                 <span className="text-brand-950 font-semibold">
                   {order.shipping === 0 ? <span className="text-forest-700 font-bold">FREE</span> : formatPrice(order.shipping)}
                 </span>
               </div>
+              {order.deliveryExplanation && (
+                <div className="p-2 rounded-lg bg-cream-50 border border-brand-100 text-[11px] text-brand-700 italic">
+                  {order.deliveryExplanation}
+                </div>
+              )}
               <div className="flex justify-between pt-2.5 border-t border-brand-200/80 items-baseline">
                 <span className="font-serif text-base font-bold text-brand-950">Grand Total</span>
                 <span className="font-serif text-2xl font-bold text-brand-950">{formatPrice(order.total)}</span>

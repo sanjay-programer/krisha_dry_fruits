@@ -60,6 +60,30 @@ export interface SocialLinks {
   whatsapp: string;
 }
 
+export interface DeliverySettings {
+  enabled: boolean;
+  pricingModel: 'km' | 'flat';
+  flatRate: number;
+  baseKm: number;
+  basePrice: number;
+  pricePerKm: number;
+  freeDeliveryThreshold: number;
+  maxKm?: number;
+  flatOutsideRate: number;
+}
+
+export const DEFAULT_DELIVERY_SETTINGS: DeliverySettings = {
+  enabled: true,
+  pricingModel: 'km',
+  flatRate: 80,
+  baseKm: 5,
+  basePrice: 50,
+  pricePerKm: 10,
+  freeDeliveryThreshold: 2000,
+  maxKm: 50,
+  flatOutsideRate: 100,
+};
+
 export interface SiteContent {
   announcement: string;
   hero: HeroContent;
@@ -67,6 +91,7 @@ export interface SiteContent {
   features: FeatureItem[];
   locationBanners: LocationBanner[];
   contact: ContactInfo;
+  delivery?: DeliverySettings;
   social: SocialLinks;
   footerBio: string;
 }
@@ -116,6 +141,7 @@ export const DEFAULT_SITE_CONTENT: SiteContent = {
     fssaiText: '',
     showFssai: false,
   },
+  delivery: DEFAULT_DELIVERY_SETTINGS,
   social: {
     facebook: 'https://facebook.com',
     instagram: 'https://instagram.com',
