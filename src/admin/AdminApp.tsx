@@ -10,7 +10,7 @@ import AdminOrders from './components/AdminOrders';
 import AdminOrderDetail from './components/AdminOrderDetail';
 import AdminAdmins from './components/AdminAdmins';
 
-export type AdminPage = 'dashboard' | 'content' | 'products' | 'orders' | 'order-detail' | 'admins';
+export type AdminPage = 'dashboard' | 'content' | 'delivery' | 'products' | 'orders' | 'order-detail' | 'admins';
 
 export default function AdminApp() {
   // Always call all hooks unconditionally at top level
@@ -22,7 +22,7 @@ export default function AdminApp() {
     if (typeof window === 'undefined') return { page: 'dashboard' as AdminPage, orderId: null };
     const params = new URLSearchParams(window.location.search);
     const tab = params.get('tab') as AdminPage | null;
-    const validTabs: AdminPage[] = ['dashboard', 'content', 'products', 'orders', 'order-detail', 'admins'];
+    const validTabs: AdminPage[] = ['dashboard', 'content', 'delivery', 'products', 'orders', 'order-detail', 'admins'];
     const p = tab && validTabs.includes(tab) ? tab : 'dashboard';
     const oId = params.get('orderId');
     return { page: p, orderId: oId };
@@ -266,6 +266,7 @@ export default function AdminApp() {
     >
       {page === 'dashboard' && <AdminDashboard onNavigate={navigate} />}
       {page === 'content' && <AdminContent />}
+      {page === 'delivery' && <AdminContent initialTab="delivery" />}
       {page === 'products' && <AdminProducts />}
       {page === 'orders' && <AdminOrders onViewOrder={(id) => navigate('order-detail', id)} />}
       {page === 'order-detail' && selectedOrderId && (

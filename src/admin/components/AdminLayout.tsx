@@ -1,4 +1,4 @@
-import { LayoutDashboard, Package, ShoppingBag, LogOut, Menu, ExternalLink, ShieldCheck, Sparkles, Users } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingBag, LogOut, Menu, ExternalLink, ShieldCheck, Sparkles, Users, Truck } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
 interface AdminLayoutProps {
@@ -12,6 +12,7 @@ interface AdminLayoutProps {
 const NAV = [
   { id: 'dashboard', label: 'Overview Dashboard', icon: LayoutDashboard },
   { id: 'content', label: 'Storefront CMS & Content', icon: Sparkles },
+  { id: 'delivery', label: 'Delivery & Shipping Pricing', icon: Truck },
   { id: 'products', label: 'Products & Inventory', icon: Package },
   { id: 'orders', label: 'Orders & Fulfillment', icon: ShoppingBag },
   { id: 'admins', label: 'Admin Team & Access', icon: Users },

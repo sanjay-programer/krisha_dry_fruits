@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Star, ArrowLeft, Plus, Minus, Check, ShoppingBag, Truck, ShieldCheck, ChevronRight, ArrowRight, Lock } from 'lucide-react';
+import { Star, ArrowLeft, Plus, Minus, Check, ShoppingBag, Truck, ShieldCheck, ChevronRight, ArrowRight, Lock, AlertCircle } from 'lucide-react';
 import type { Product, CashewType, Quantity } from '@/types';
 import { formatPrice } from '@/data';
 import { useCart } from '@/cart-context';
@@ -25,6 +25,10 @@ const TYPE_LABELS: Record<string, { emoji: string; short: string }> = {
   'Honey Glazed':     { emoji: '★', short: 'Honey Glazed' },
 };
 
+function getFirstAvailablePrice(type?: any) {
+  return (type?.prices || []).find((p: any) => typeof p.price === 'number' && p.price > 0);
+}
+
 export default function ProductDetail({
   product,
   onBack,
@@ -40,7 +44,10 @@ export default function ProductDetail({
 
   const firstType = (product.types || [])[0];
   const [selectedType, setSelectedType] = useState<CashewType>(firstType?.type as CashewType);
-  const [selectedQty, setSelectedQty] = useState<Quantity>(firstType?.prices?.[0]?.quantity as Quantity);
+  const [selectedQty, setSelectedQty] = useState<Quantity>(() => {
+    const valid = getFirstAvailablePrice(firstType);
+    return (valid?.quantity || firstType?.prices?.[0]?.quantity) as Quantity;
+  });
   const [activeImage, setActiveImage] = useState(0);
   const [count, setCount] = useState(1);
   const [added, setAdded] = useState(false);
@@ -49,7 +56,8 @@ export default function ProductDetail({
   useEffect(() => {
     const first = (product.types || [])[0];
     setSelectedType(first?.type as CashewType);
-    setSelectedQty(first?.prices?.[0]?.quantity as Quantity);
+    const valid = getFirstAvailablePrice(first);
+    setSelectedQty((valid?.quantity || first?.prices?.[0]?.quantity) as Quantity);
     setActiveImage(0);
     setCount(1);
     setAdded(false);
@@ -71,10 +79,16 @@ export default function ProductDetail({
     [product, selectedType, firstType]
   );
 
-  const currentPrice = useMemo(
-    () => currentType?.prices.find((p) => p.quantity === selectedQty) ?? currentType?.prices[0],
-    [currentType, selectedQty]
+  // Filter only quantities with an active price > 0 (prices left as 0 or empty are not available)
+  const availablePrices = useMemo(
+    () => (currentType?.prices || []).filter((p) => typeof p.price === 'number' && p.price > 0),
+    [currentType]
   );
+
+  const currentPrice = useMemo(() => {
+    if (availablePrices.length === 0) return null;
+    return availablePrices.find((p) => p.quantity === selectedQty) ?? availablePrices[0];
+  }, [availablePrices, selectedQty]);
 
   const gallery = useMemo(() => {
     const list: string[] = [];
@@ -92,8 +106,13 @@ export default function ProductDetail({
 
   const handleTypeChange = (type: CashewType) => {
     setSelectedType(type);
-    const t = (product.types || []).find((t) => t.type === type);
-    if (t?.prices?.[0]) setSelectedQty(t.prices[0].quantity as Quantity);
+    const t = (product.types || []).find((x) => x.type === type);
+    const valid = getFirstAvailablePrice(t);
+    if (valid) {
+      setSelectedQty(valid.quantity as Quantity);
+    } else if (t?.prices?.[0]) {
+      setSelectedQty(t.prices[0].quantity as Quantity);
+    }
     if (t?.image) {
       const idx = gallery.indexOf(t.image);
       if (idx !== -1) setActiveImage(idx);
@@ -122,6 +141,7 @@ export default function ProductDetail({
   }, [isSignedIn, product]);
 
   const handleGuestSignInAndAdd = () => {
+    if (!currentPrice || currentPrice.price <= 0) return;
     const prodId = (product as any)._id || product.id;
     const returnPath = `/product?id=${prodId}`;
     try {
@@ -152,11 +172,11 @@ export default function ProductDetail({
   };
 
   const handleAddToCart = () => {
+    if (!currentType || !currentPrice || currentPrice.price <= 0) return;
     if (!isSignedIn) {
       handleGuestSignInAndAdd();
       return;
     }
-    if (!currentType || !currentPrice) return;
     for (let i = 0; i < count; i++) {
       addItem(product, selectedType, selectedQty, currentPrice, currentType.image || product.image);
     }
@@ -268,7 +288,9 @@ export default function ProductDetail({
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {siblingProducts.map((sp) => {
-                    const spPrices = sp.types.flatMap((t) => t.prices.map((pr) => pr.price)).filter(Boolean);
+                    const spPrices = (sp.types || [])
+                      .flatMap((t) => (t.prices || []).map((pr) => pr.price))
+                      .filter((p): p is number => typeof p === 'number' && p > 0);
                     const spMin = spPrices.length ? Math.min(...spPrices) : null;
                     return (
                       <button
@@ -306,6 +328,7 @@ export default function ProductDetail({
                 {product.types.map((t) => {
                   const label = TYPE_LABELS[t.type] ?? { emoji: '●', short: t.type };
                   const isSelected = selectedType === t.type;
+                  const hasAvailableWeights = (t.prices || []).some((pr: any) => typeof pr.price === 'number' && pr.price > 0);
                   return (
                     <button
                       key={t.type}
@@ -313,14 +336,23 @@ export default function ProductDetail({
                       className={`relative flex items-center gap-2 p-2.5 sm:p-3 rounded-xl border text-left transition-all ${
                         isSelected
                           ? 'border-brand-700 bg-brand-100/70 shadow-sm ring-1 ring-brand-700'
-                          : 'border-brand-200 bg-white hover:border-brand-400 hover:bg-cream-50'
+                          : hasAvailableWeights
+                          ? 'border-brand-200 bg-white hover:border-brand-400 hover:bg-cream-50'
+                          : 'border-brand-200/60 bg-cream-100/40 opacity-75'
                       }`}
                     >
                       <span className="w-6 h-6 rounded-full bg-cream-200/80 flex items-center justify-center text-xs font-bold text-brand-900 shrink-0">
                         {label.emoji}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <div className="text-xs font-bold text-brand-950 truncate">{t.type}</div>
+                        <div className="text-xs font-bold text-brand-950 truncate flex items-center gap-1.5">
+                          <span>{t.type}</span>
+                          {!hasAvailableWeights && (
+                            <span className="text-[9px] font-semibold text-gray-500 bg-gray-200/70 px-1.5 py-0.2 rounded">
+                              Out of stock
+                            </span>
+                          )}
+                        </div>
                       </div>
                       {isSelected && <Check className="w-3.5 h-3.5 text-brand-800 shrink-0" />}
                     </button>
@@ -342,30 +374,39 @@ export default function ProductDetail({
               <label className="text-xs sm:text-sm font-bold text-brand-950 tracking-wide uppercase">
                 2. Select Pack Weight
               </label>
-              <span className="text-xs text-forest-700 font-semibold">Bulk discount applied</span>
+              {availablePrices.length > 0 && (
+                <span className="text-xs text-forest-700 font-semibold">Bulk discount applied</span>
+              )}
             </div>
 
-            <div className="flex flex-wrap gap-2 sm:gap-2.5">
-              {currentType?.prices.map((p) => {
-                const isSelected = selectedQty === p.quantity;
-                return (
-                  <button
-                    key={p.quantity}
-                    onClick={() => { setSelectedQty(p.quantity as Quantity); setAdded(false); }}
-                    className={`flex-1 min-w-[70px] sm:min-w-[85px] py-2 sm:py-2.5 px-3 rounded-xl border text-center transition-all ${
-                      isSelected
-                        ? 'border-brand-800 bg-brand-800 text-cream-50 font-bold shadow-sm'
-                        : 'border-brand-200 bg-white text-brand-900 hover:border-brand-400 font-medium'
-                    }`}
-                  >
-                    <div className="text-xs sm:text-sm">{p.quantity}</div>
-                    <div className={`text-[10.5px] ${isSelected ? 'text-cream-200' : 'text-brand-600 font-semibold'}`}>
-                      {formatPrice(p.price)}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+            {availablePrices.length > 0 ? (
+              <div className="flex flex-wrap gap-2 sm:gap-2.5">
+                {availablePrices.map((p) => {
+                  const isSelected = selectedQty === p.quantity;
+                  return (
+                    <button
+                      key={p.quantity}
+                      onClick={() => { setSelectedQty(p.quantity as Quantity); setAdded(false); }}
+                      className={`flex-1 min-w-[70px] sm:min-w-[85px] py-2 sm:py-2.5 px-3 rounded-xl border text-center transition-all ${
+                        isSelected
+                          ? 'border-brand-800 bg-brand-800 text-cream-50 font-bold shadow-sm'
+                          : 'border-brand-200 bg-white text-brand-900 hover:border-brand-400 font-medium'
+                      }`}
+                    >
+                      <div className="text-xs sm:text-sm">{p.quantity}</div>
+                      <div className={`text-[10.5px] ${isSelected ? 'text-cream-200' : 'text-brand-600 font-semibold'}`}>
+                        {formatPrice(p.price)}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>This variety has no available package weights at the moment. Please select another variety above.</span>
+              </div>
+            )}
           </div>
 
           {/* Quantity Stepper & Price Calculation Card */}
@@ -373,40 +414,58 @@ export default function ProductDetail({
             <div className="flex items-center justify-between mb-4">
               <div>
                 <span className="text-[11px] uppercase tracking-wider text-brand-500 font-bold block">
-                  Total Investment ({selectedQty} × {count})
+                  {currentPrice && currentPrice.price > 0 ? `Total Investment (${selectedQty} × ${count})` : 'Product Availability'}
                 </span>
                 <div className="font-serif text-3xl font-bold text-brand-950">
-                  {currentPrice ? formatPrice(currentPrice.price * count) : '—'}
+                  {currentPrice && currentPrice.price > 0 ? formatPrice(currentPrice.price * count) : (
+                    <span className="text-xl text-gray-500 font-medium">Out of Stock</span>
+                  )}
                 </div>
-                <div className="text-[11px] text-forest-700 font-medium mt-0.5">
-                  ✓ Free delivery on orders over ₹2,000
-                </div>
+                {currentPrice && currentPrice.price > 0 && (
+                  <div className="text-[11px] text-forest-700 font-medium mt-0.5">
+                    ✓ Free delivery on orders over ₹2,000
+                  </div>
+                )}
               </div>
 
               {/* Counter Stepper */}
-              <div className="flex items-center gap-2 bg-white rounded-full p-1 border border-brand-200 shadow-sm">
-                <button
-                  onClick={() => setCount((c) => Math.max(1, c - 1))}
-                  className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-cream-100 text-brand-800 active:scale-95 transition-all"
-                  aria-label="Decrease quantity"
-                >
-                  <Minus className="w-3.5 h-3.5" />
-                </button>
-                <span className="font-serif text-sm font-bold text-brand-950 w-7 text-center">
-                  {count}
-                </span>
-                <button
-                  onClick={() => setCount((c) => c + 1)}
-                  className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-cream-100 text-brand-800 active:scale-95 transition-all"
-                  aria-label="Increase quantity"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-              </div>
+              {currentPrice && currentPrice.price > 0 && (
+                <div className="flex items-center gap-2 bg-white rounded-full p-1 border border-brand-200 shadow-sm">
+                  <button
+                    onClick={() => setCount((c) => Math.max(1, c - 1))}
+                    className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-cream-100 text-brand-800 active:scale-95 transition-all"
+                    aria-label="Decrease quantity"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="font-serif text-sm font-bold text-brand-950 w-7 text-center">
+                    {count}
+                  </span>
+                  <button
+                    onClick={() => setCount((c) => c + 1)}
+                    className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-cream-100 text-brand-800 active:scale-95 transition-all"
+                    aria-label="Increase quantity"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Desktop Add to Cart Button */}
-            {!isSignedIn ? (
+            {!currentPrice || currentPrice.price <= 0 ? (
+              <div className="space-y-2">
+                <button
+                  disabled
+                  className="w-full py-3.5 text-sm font-semibold tracking-wide flex items-center justify-center gap-2 rounded-full bg-gray-200 text-gray-500 cursor-not-allowed shadow-none"
+                >
+                  <span>Currently Out of Stock</span>
+                </button>
+                <p className="text-[11.5px] text-brand-500 text-center font-medium">
+                  This weight tier or variety is currently not in stock. Please select another option above.
+                </p>
+              </div>
+            ) : !isSignedIn ? (
               <div className="space-y-2">
                 <button
                   onClick={handleGuestSignInAndAdd}
@@ -505,11 +564,18 @@ export default function ProductDetail({
               {selectedType} · {selectedQty}
             </span>
             <div className="font-serif text-xl font-bold text-brand-950">
-              {currentPrice ? formatPrice(currentPrice.price * count) : '—'}
+              {currentPrice && currentPrice.price > 0 ? formatPrice(currentPrice.price * count) : 'Out of Stock'}
             </div>
           </div>
 
-          {!isSignedIn ? (
+          {!currentPrice || currentPrice.price <= 0 ? (
+            <button
+              disabled
+              className="rounded-full bg-gray-200 text-gray-500 py-3 px-6 text-xs sm:text-sm font-semibold cursor-not-allowed"
+            >
+              <span>Out of Stock</span>
+            </button>
+          ) : !isSignedIn ? (
             <button
               onClick={handleGuestSignInAndAdd}
               className="rounded-full bg-amber-700 hover:bg-amber-800 text-cream-50 py-3 px-6 text-xs sm:text-sm font-semibold flex items-center gap-1.5 shadow-md transition-colors"

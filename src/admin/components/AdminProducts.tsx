@@ -876,7 +876,7 @@ export default function AdminProducts() {
 
                       {/* Weight Rows */}
                       <div>
-                        <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center justify-between mb-1">
                           <label className="text-xs font-bold text-brand-900">Weights & Prices</label>
                           <button
                             type="button"
@@ -887,34 +887,48 @@ export default function AdminProducts() {
                             <span>Add Tier</span>
                           </button>
                         </div>
+                        <p className="text-[11px] text-brand-500 mb-2.5">
+                          💡 Enter prices in ₹. If you leave a weight at <strong>₹0 or blank</strong> (e.g. 1kg → ₹0), that quantity is automatically marked <strong>Not Available</strong> on the store and customers will not be able to order it.
+                        </p>
 
                         <div className="space-y-2">
-                          {t.prices.map((p: any, idx: number) => (
-                            <div key={idx} className="flex items-center gap-2">
-                              <input
-                                value={p.quantity}
-                                onChange={(e) => updateQuantityLabel(t.type, idx, e.target.value)}
-                                className="input-field text-xs py-2 w-28 bg-white font-semibold"
-                                placeholder="e.g. 500g"
-                              />
-                              <span className="text-brand-400 font-bold text-xs">₹</span>
-                              <input
-                                type="number"
-                                value={p.price}
-                                onChange={(e) => updatePriceByIdx(t.type, idx, parseInt(e.target.value) || 0)}
-                                className="input-field text-xs py-2 flex-1 bg-white font-bold"
-                                placeholder="Price in INR"
-                                min="0"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => removeQuantity(t.type, idx)}
-                                className="p-2 text-brand-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ))}
+                          {t.prices.map((p: any, idx: number) => {
+                            const isAvailable = typeof p.price === 'number' && p.price > 0;
+                            return (
+                              <div key={idx} className="flex items-center gap-2">
+                                <input
+                                  value={p.quantity}
+                                  onChange={(e) => updateQuantityLabel(t.type, idx, e.target.value)}
+                                  className="input-field text-xs py-2 w-28 bg-white font-semibold"
+                                  placeholder="e.g. 500g"
+                                />
+                                <span className="text-brand-400 font-bold text-xs">₹</span>
+                                <input
+                                  type="number"
+                                  value={p.price === 0 ? '' : p.price}
+                                  onChange={(e) => updatePriceByIdx(t.type, idx, e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                  className={`input-field text-xs py-2 flex-1 font-bold ${
+                                    isAvailable ? 'bg-white text-brand-950' : 'bg-gray-50 text-gray-400 border-dashed'
+                                  }`}
+                                  placeholder="0 = Not Available"
+                                  min="0"
+                                />
+                                <span className={`text-[10px] font-bold px-2 py-1 rounded-md shrink-0 whitespace-nowrap ${
+                                  isAvailable ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-500 border border-gray-200'
+                                }`}>
+                                  {isAvailable ? `✓ Active (₹${p.price})` : '✕ Not Available (₹0)'}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => removeQuantity(t.type, idx)}
+                                  className="p-2 text-brand-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                                  title="Remove weight tier"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     </div>
@@ -1128,7 +1142,9 @@ export default function AdminProducts() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredAdminProducts.map((p, idx) => {
-            const allPrices = (p.types || []).flatMap((t: any) => (t.prices || []).map((pr: any) => pr.price)).filter(Boolean);
+            const allPrices = (p.types || [])
+              .flatMap((t: any) => (t.prices || []).map((pr: any) => pr.price))
+              .filter((pr: any) => typeof pr === 'number' && pr > 0);
             const minPrice = allPrices.length ? Math.min(...allPrices) : null;
             const activeVarieties = (p.types || []).filter((t: any) => t.enabled !== false).map((t: any) => t.type);
 
@@ -1194,7 +1210,7 @@ export default function AdminProducts() {
                     </p>
 
                     <div className="text-xs font-semibold text-brand-900 bg-cream-100/70 p-2.5 rounded-xl border border-brand-200/60 flex items-center justify-between mb-3">
-                      <span>{minPrice ? `From ${formatPrice(minPrice)}` : 'Pricing unconfigured'}</span>
+                      <span>{minPrice ? `From ${formatPrice(minPrice)}` : '⚠️ No weights priced (>₹0)'}</span>
                       <span className="text-brand-600 font-medium">
                         {activeVarieties.length} {activeVarieties.length === 1 ? 'variety' : 'varieties'}
                       </span>

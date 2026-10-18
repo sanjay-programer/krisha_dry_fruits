@@ -133,17 +133,25 @@ export default function AdminDashboard({ onNavigate }: { onNavigate: (p: AdminPa
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            onClick={() => onNavigate('delivery')}
+            className="btn-outline py-2.5 px-3.5 text-xs font-semibold flex items-center gap-1.5 bg-amber-50/70 border-amber-300 text-amber-950 hover:bg-amber-100"
+            title="Configure delivery fees and distance-based KM rates"
+          >
+            <Truck className="w-3.5 h-3.5 text-amber-700" />
+            <span>Delivery & Shipping</span>
+          </button>
           <button
             onClick={() => onNavigate('products')}
-            className="btn-outline py-2.5 px-4 text-xs font-semibold"
+            className="btn-outline py-2.5 px-3.5 text-xs font-semibold flex items-center gap-1.5"
           >
             <Package className="w-3.5 h-3.5" />
             <span>Manage Catalog</span>
           </button>
           <button
             onClick={() => onNavigate('orders')}
-            className="btn-primary py-2.5 px-4 text-xs font-semibold"
+            className="btn-primary py-2.5 px-3.5 text-xs font-semibold flex items-center gap-1.5"
           >
             <ShoppingBag className="w-3.5 h-3.5" />
             <span>All Orders</span>

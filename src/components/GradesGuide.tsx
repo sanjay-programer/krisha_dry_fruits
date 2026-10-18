@@ -61,7 +61,9 @@ export default function GradesGuide({ onShop, onViewProduct, products }: GradesG
           products.map((product, i) => {
             const gradeInfo = GRADES.find((g) => g.grade.toUpperCase() === product.grade.toUpperCase());
             const gradeDesc = product.gradeDescription || gradeInfo?.description || product.tagline || 'Hand-sorted whole kernels';
-            const allPrices = (product.types || []).flatMap((t) => (t.prices || []).map((p) => p.price)).filter(Boolean);
+            const allPrices = (product.types || [])
+              .flatMap((t) => (t.prices || []).map((p) => p.price))
+              .filter((p): p is number => typeof p === 'number' && p > 0);
             const minPrice = allPrices.length ? Math.min(...allPrices) : null;
             return (
               <div
@@ -97,11 +99,13 @@ export default function GradesGuide({ onShop, onViewProduct, products }: GradesG
                   </div>
                 </div>
                 <div className="text-center md:text-right shrink-0">
-                  {minPrice && (
+                  {minPrice ? (
                     <>
                       <div className="text-xs text-brand-500">From</div>
                       <div className="font-serif text-2xl font-bold text-brand-900 mb-2">{formatPrice(minPrice)}</div>
                     </>
+                  ) : (
+                    <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Out of Stock</div>
                   )}
                   <button
                     onClick={() => onViewProduct((product as any)._id || product.id)}

@@ -70,10 +70,34 @@ const ICON_OPTIONS: Array<{ label: string; value: FeatureItem['iconName']; icon:
   { label: 'Check (Certified)', value: 'Check', icon: Check },
 ];
 
-export default function AdminContent() {
+export type ContentTab = 'hero' | 'features' | 'locations' | 'contact' | 'delivery' | 'social';
+
+interface AdminContentProps {
+  initialTab?: ContentTab;
+}
+
+export default function AdminContent({ initialTab }: AdminContentProps = {}) {
   const currentContent = useSiteContent();
   const [content, setContent] = useState<SiteContent>(currentContent);
-  const [activeTab, setActiveTab] = useState<'hero' | 'features' | 'locations' | 'contact' | 'delivery' | 'social'>('hero');
+  const [activeTab, setActiveTab] = useState<ContentTab>(() => {
+    if (initialTab) return initialTab;
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      const tabParam = searchParams.get('tab') as ContentTab;
+      const subtabParam = searchParams.get('subtab') as ContentTab;
+      const valid: ContentTab[] = ['hero', 'features', 'locations', 'contact', 'delivery', 'social'];
+      if (tabParam && valid.includes(tabParam)) return tabParam;
+      if (subtabParam && valid.includes(subtabParam)) return subtabParam;
+    }
+    return 'hero';
+  });
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
+
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);

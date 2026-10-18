@@ -10,7 +10,7 @@ interface ProductCardProps {
 export default function ProductCard({ product, onView }: ProductCardProps) {
   const allPrices = (product.types || [])
     .flatMap((t) => (t.prices || []).map((p) => p.price))
-    .filter(Boolean);
+    .filter((pr): pr is number => typeof pr === 'number' && pr > 0);
   const minPrice = allPrices.length ? Math.min(...allPrices) : 0;
 
   return (
@@ -77,12 +77,25 @@ export default function ProductCard({ product, onView }: ProductCardProps) {
         {/* Price & Action Row */}
         <div className="pt-3 border-t border-brand-100/80 flex items-center justify-between">
           <div>
-            <span className="text-[11px] uppercase tracking-wider text-brand-500 block font-semibold">
-              Starting from
-            </span>
-            <div className="font-serif text-xl sm:text-2xl font-bold text-brand-950 leading-tight">
-              {formatPrice(minPrice)}
-            </div>
+            {minPrice > 0 ? (
+              <>
+                <span className="text-[11px] uppercase tracking-wider text-brand-500 block font-semibold">
+                  Starting from
+                </span>
+                <div className="font-serif text-xl sm:text-2xl font-bold text-brand-950 leading-tight">
+                  {formatPrice(minPrice)}
+                </div>
+              </>
+            ) : (
+              <>
+                <span className="text-[11px] uppercase tracking-wider text-red-600 block font-semibold">
+                  Status
+                </span>
+                <div className="font-serif text-base sm:text-lg font-bold text-gray-500 leading-tight">
+                  Out of Stock
+                </div>
+              </>
+            )}
           </div>
 
           <div className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-cream-100 text-brand-800 group-hover:bg-brand-700 group-hover:text-cream-50 transition-all duration-300 shadow-sm">
